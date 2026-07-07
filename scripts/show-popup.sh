@@ -51,6 +51,9 @@ from grid import grid_cols, grid_rows  # 與測試、Windows 規格同一份
 
 MAX_PER_ROW = 3
 MAX_LAYOUT_WIDTH_RATIO = 0.40
+# 單格尺寸上限：張數少時 cell 由版面寬除出來會過大（單張 = 螢幕寬 40%）。
+# ALERT_CELL_MAX 可覆寫。
+CELL_MAX = max(80, int(os.environ.get("ALERT_CELL_MAX", "320") or 320))
 GAP = 12
 MARGIN = 20
 POLL_MS = 300
@@ -238,6 +241,8 @@ def render():
     rows = grid_rows(n, cols)
     max_w = int(sw * max_w_ratio)
     cell = int((max_w - (cols + 1) * GAP) / cols)
+    if cell > CELL_MAX:
+        cell = CELL_MAX
     if cell < 80:
         cell = 80
     need_h = rows * cell + (rows + 1) * GAP

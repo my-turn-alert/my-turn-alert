@@ -20,6 +20,7 @@
 param(
   [int]$MaxPerRow = 3,
   [double]$MaxLayoutWidthRatio = 0.40,
+  [int]$CellMaxPx = 320,
   [int]$GapPx = 12,
   [int]$MarginPx = 20,
   [int]$PollMs = 100,
@@ -43,6 +44,11 @@ $DefaultImage = if ($env:ALERT_DEFAULT_IMAGE) { $env:ALERT_DEFAULT_IMAGE } else 
 
 $MaxPopups = if ($env:ALERT_MAX_POPUPS) { [int]$env:ALERT_MAX_POPUPS } else { 100 }
 if ($MaxPopups -lt 1) { $MaxPopups = 1 }
+
+# 單格尺寸上限：張數少時 cell 由版面寬除出來會大得離譜（單張 = 螢幕寬 40%），
+# 設上限讓 1~3 張時維持角落小圖。ALERT_CELL_MAX 可覆寫。
+if ($env:ALERT_CELL_MAX -match '^[0-9]+$') { $CellMaxPx = [int]$env:ALERT_CELL_MAX }
+if ($CellMaxPx -lt 80) { $CellMaxPx = 80 }
 
 # 指定顯示螢幕（1-based）。未設 / 非數字 / 超界 → 0 = 自動（最新 alert 的 CLI 所在螢幕）。
 $MonitorIndex = 0
@@ -300,6 +306,7 @@ function Compute-GridCell([int]$n, [int]$maxLayoutW, [int]$maxLayoutH) {
   }
   $rows = Get-GridRows $n $cols
   $cell = [int](($maxLayoutW - ($cols + 1) * $GapPx) / $cols)
+  if ($cell -gt $CellMaxPx) { $cell = $CellMaxPx }
   if ($cell -lt 80) { $cell = 80 }
   $needH = $rows * $cell + ($rows + 1) * $GapPx
   if ($needH -gt $maxLayoutH) {

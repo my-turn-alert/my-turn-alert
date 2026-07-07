@@ -1,7 +1,7 @@
 {
   "name": "my-turn-alert",
   "description": "多個 Claude Code 同時跑時,每個結束/卡住的 CLI 在螢幕角落彈出一張對應圖片(自適應網格);點圖即切回該 CLI。支援 Windows 與 macOS。",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "author": {
     "name": "benC96"
   },

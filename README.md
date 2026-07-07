@@ -8,7 +8,7 @@
 
 *Visual popup alerts when any Claude Code CLI needs a human. Click the image to jump back to that CLI.*
 
-[![Version](https://img.shields.io/badge/version-1.4.5-blue)](./.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.4.6-blue)](./.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#platform-support)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
@@ -136,6 +136,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
 | --- | --- | --- | --- |
 | Max per row | 3 | `$MaxPerRow` / `MAX_PER_ROW` | Wraps into a grid beyond this |
 | Layout width ratio | 0.40 | `$MaxLayoutWidthRatio` / `MAX_LAYOUT_WIDTH_RATIO` | Cap on total layout width ÷ screen width |
+| Max cell size | 320 px | `$CellMaxPx` / `CELL_MAX` (env `ALERT_CELL_MAX`) | Cap on a single image's size — keeps 1–3 popups small in the corner |
 | Cell gap | 12 px | `$GapPx` / `GAP` | Whitespace between images |
 | Corner margin | 20 px | `$MarginPx` / `MARGIN` | Distance from the bottom-right screen corner |
 | Poll interval | 300 ms | `$PollMs` / `POLL_MS` | How often the renderer scans the state folder and foreground window |
@@ -152,6 +153,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
 | `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | User asset folder |
 | `ALERT_MAX_POPUPS` | `100` | Max popups visible at once (first come, first served; new CLIs wait once full) |
 | `ALERT_MONITOR` | auto | Pin popups to monitor N (1-based); unset or out-of-range uses the most recent alert's CLI screen |
+| `ALERT_CELL_MAX` | `320` | Max size (px) of a single popup image; raise it if you want bigger images |
 | `ALERT_DISABLE_AUTOGEN` | `0` | Set `1` to disable auto-generating 001..100 when the image folder is empty |
 | `ALERT_DEFAULT_IMAGE` | plugin built-in | Final fallback image when every other source fails |
 | `ALERT_LOCK_STALE_SECS` | `30` | Lock directories older than this are treated as orphans (left by killed hooks) and broken automatically |

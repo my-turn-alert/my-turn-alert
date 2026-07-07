@@ -8,7 +8,7 @@
 
 *Visual popup alerts when any Claude Code CLI needs a human. Click the image to jump back to that CLI.*
 
-[![Version](https://img.shields.io/badge/version-1.4.5-blue)](./.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.4.6-blue)](./.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#平台支援)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
@@ -136,6 +136,7 @@
 | --- | --- | --- | --- |
 | 每列上限 | 3 | `$MaxPerRow` / `MAX_PER_ROW` | 超過才換行成網格 |
 | 版面寬比例 | 0.40 | `$MaxLayoutWidthRatio` / `MAX_LAYOUT_WIDTH_RATIO` | 總版面寬 ÷ 螢幕寬上限 |
+| 單格尺寸上限 | 320 px | `$CellMaxPx` / `CELL_MAX`(環境變數 `ALERT_CELL_MAX`) | 單張圖的大小上限——1~3 張時維持角落小圖不佔螢幕 |
 | 格子間距 | 12 px | `$GapPx` / `GAP` | 圖與圖之間留白 |
 | 右下角邊距 | 20 px | `$MarginPx` / `MARGIN` | 離螢幕右下角的距離 |
 | 輪詢間隔 | 300 ms | `$PollMs` / `POLL_MS` | renderer 掃狀態夾與前景偵測的間隔 |
@@ -152,6 +153,7 @@
 | `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 使用者素材夾 |
 | `ALERT_MAX_POPUPS` | `100` | 同時可見上限(先到先服務;滿了之後的新 CLI 不彈圖) |
 | `ALERT_MONITOR` | 自動 | 指定顯示在第 N 個螢幕(1-based);未設或超界時用最新 alert 的 CLI 所在螢幕 |
+| `ALERT_CELL_MAX` | `320` | 單張彈圖的尺寸上限(px);想要大圖可調高 |
 | `ALERT_DISABLE_AUTOGEN` | `0` | 設 `1` 關閉空資料夾時自動生成 001..100 |
 | `ALERT_DEFAULT_IMAGE` | plugin 內建 | 全部退路都失敗時的最終預設圖 |
 | `ALERT_LOCK_STALE_SECS` | `30` | 鎖目錄超過此齡視為孤兒(被 kill 的 hook 留下的),自動破鎖 |
