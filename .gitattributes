@@ -1,0 +1,17 @@
+# 確保腳本換行格式在任何平台 clone 後都正確，否則執行會失敗。
+
+# Bash 腳本必須是 LF（CRLF 會讓 #!/usr/bin/env bash 失效）
+*.sh text eol=lf
+
+# Python 腳本必須是 LF
+*.py text eol=lf
+
+# PowerShell 腳本用 CRLF（Windows PowerShell 慣例）
+*.ps1 text eol=crlf
+
+# PNG 是二進位，不要做任何換行/文字轉換
+*.png binary
+
+# JSON / Markdown 用 LF
+*.json text eol=lf
+*.md text eol=lf

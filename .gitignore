@@ -1,0 +1,17 @@
+# 作業系統雜物
+.DS_Store
+Thumbs.db
+
+# 編輯器
+.idea/
+.vscode/
+
+# 使用者自訂的提醒圖（如果有人不小心把它放進專案目錄，不要提交）
+alert-image.png
+
+# 使用者的多圖資料夾若誤放專案目錄,不要提交
+alert-images/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
