@@ -4,46 +4,48 @@
 
 # my-turn-alert
 
-**Claude Code 跑完了、卡住了、在等你 —— 彈圖提醒你,點圖切回去。**
+**Claude Code finished, got stuck, or is waiting for you — a popup image alerts you. Click it to jump right back.**
 
 *Visual popup alerts when any Claude Code CLI needs a human. Click the image to jump back to that CLI.*
 
 [![Version](https://img.shields.io/badge/version-1.4.4-blue)](./.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#-平台支援)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#platform-support)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
 
-[安裝](#-安裝) · [功能](#-功能總覽) · [自訂圖片](#%EF%B8%8F-自訂圖片) · [設定](#%EF%B8%8F-進階設定) · [疑難排解](#-疑難排解) · [運作原理](#-運作原理)
+**English** · [繁體中文](./README.zh-TW.md)
+
+[Install](#-installation) · [Features](#-features) · [Custom Images](#%EF%B8%8F-custom-images) · [Configuration](#%EF%B8%8F-advanced-configuration) · [Troubleshooting](#-troubleshooting) · [How It Works](#-how-it-works)
 
 </div>
 
 ---
 
-## 這是什麼?
+## What is this?
 
-如果你常**同時開好幾個 Claude Code**、跑完卻沒注意到該換你了,這個 plugin 就是為你做的。
+If you often run **several Claude Code CLIs at once** and keep missing the moment one of them finishes and it's your turn — this plugin is for you.
 
-它監聽 Claude Code 的 **Stop / StopFailure / Notification** 事件——當任一 CLI 回應結束、發生 API 錯誤、要求授權、或閒置等你輸入時,在螢幕右下角彈出一張**對應該 CLI 的圖片**,把你的注意力拉回來。**點圖片就直接切回那個 CLI 視窗**。
+It listens to Claude Code's **Stop / StopFailure / Notification** events. Whenever any CLI finishes a response, hits an API error, asks for permission, or sits idle waiting for input, a **per-CLI image** pops up in the bottom-right corner of your screen to pull your attention back. **Click the image to bring that CLI's window straight to the foreground.**
 
-![多實例示意](./assets/demo-multi.png)
+![Multi-instance demo](./assets/demo-multi.png)
 
-## ✨ 功能總覽
+## ✨ Features
 
-| | 功能 | 說明 |
+| | Feature | Description |
 | --- | --- | --- |
-| 🔔 | **該你了就彈圖** | 回應結束、API 錯誤、權限請求、閒置等待——涵蓋所有「輪到人」的時機 |
-| 🖱️ | **點圖即切回** | 點任一張圖,對應的 CLI 視窗立刻前景化,該圖消失(其他圖不受影響) |
-| 🧠 | **回去就自動關** | 以視窗 handle 精準比對:你切回那個 CLI,它的圖就自動關掉 |
-| 🗂️ | **多 CLI 各一張圖** | 同時跑 N 個 Claude Code,每個 CLI 固定分配一張獨立圖片,一眼認出是誰在叫你 |
-| 📐 | **自適應網格** | 1~3 張一排、4 張 2×2、更多自動換行縮放;永不裁切、不超出螢幕 |
-| 🖼️ | **零設定自訂圖** | 把圖丟進 `~/.claude/alert-images/` 即生效;空著也會自動生成 100 張編號圖 |
-| 🔇 | **不吵你** | 彈窗不搶焦點、不打斷打字;同一 CLI 重複觸發只覆寫不堆疊;關掉後 ~2 分鐘內的事件回音不重彈 |
-| 🛡️ | **安全邊界明確** | 只讀寫自己的狀態資料夾;不碰登錄檔、PATH、開機啟動、全域鍵盤 Hook([詳見安全章節](#%EF%B8%8F-安全邊界)) |
-| 💨 | **不拖慢 Claude** | hook 數百毫秒內返回;長駐 renderer 背景繪圖,全部圖關完自動退出 |
+| 🔔 | **Popup when it's your turn** | Response finished, API error, permission request, idle waiting — covers every "human's turn" moment |
+| 🖱️ | **Click to jump back** | Click any image and the matching CLI window comes to the foreground; that image closes (others stay) |
+| 🧠 | **Auto-dismiss on return** | Precise window-handle matching: switch back to that CLI and its popup closes by itself |
+| 🗂️ | **One image per CLI** | Run N Claude Codes at once — each CLI gets its own fixed image, so you can tell at a glance who's calling |
+| 📐 | **Adaptive grid** | 1–3 in a row, 4 as 2×2, more wrap and scale automatically; never cropped, never off-screen |
+| 🖼️ | **Zero-config custom images** | Drop images into `~/.claude/alert-images/` and they just work; if empty, 100 numbered images are auto-generated |
+| 🔇 | **Never interrupts you** | Popups don't steal focus or break your typing; repeated triggers from the same CLI overwrite instead of stacking; event echoes within ~2 minutes of dismissal don't re-pop |
+| 🛡️ | **Clear security boundary** | Only reads/writes its own state folder; never touches the registry, PATH, startup entries, or global keyboard hooks ([see Security](#%EF%B8%8F-security-boundary)) |
+| 💨 | **Doesn't slow Claude down** | Hooks return within a few hundred milliseconds; a long-lived renderer draws in the background and exits once all popups are closed |
 
-## 📦 安裝
+## 📦 Installation
 
-在 Claude Code 中依序輸入這三行:
+Type these three lines in Claude Code, in order:
 
 ```text
 /plugin marketplace add my-turn-alert/my-turn-alert
@@ -51,235 +53,219 @@
 /plugin enable my-turn-alert@my-turn-alert
 ```
 
-> ⚠️ **第三步別漏掉**:plugin 安裝後**預設是停用的**,必須 `enable` 後(或執行 `/reload-plugins`、重開 session)hook 才會生效。如果裝完沒反應,九成是這一步沒做。
+> ⚠️ **Don't skip step three**: plugins are **disabled by default** after installation. Hooks only take effect after `enable` (or `/reload-plugins`, or a new session). If nothing happens after installing, this step is the culprit nine times out of ten.
 
-裝好後,下次 Claude 回應結束時,螢幕右下角就會跳出提醒圖:
+Once installed, the next time Claude finishes a response an alert image pops up in the bottom-right corner:
 
 <div align="center">
 
-<img src="./assets/default-alert.png" width="220" alt="預設提醒圖">
+<img src="./assets/default-alert.png" width="220" alt="Default alert image">
 
 </div>
 
-### 平台支援
+### Platform support
 
-| 平台 | 支援程度 | 需求 |
+| Platform | Support level | Requirements |
 | --- | --- | --- |
-| **Windows** | ✅ 完整(含點圖切視窗、回 CLI 自動關) | Git Bash(Claude Code 內建使用)+ PowerShell |
-| **macOS** | 🟡 盡力而為(可叫出終端機 App,無法精準切 tab) | `python3` + Tkinter |
+| **Windows** | ✅ Full (click-to-switch, auto-dismiss on return) | Git Bash (bundled with Claude Code) + PowerShell |
+| **macOS** | 🟡 Best-effort (can bring the terminal app forward, cannot target a specific tab) | `python3` + Tkinter |
 
-### 更新 / 停用 / 移除
+### Update / disable / uninstall
 
 ```text
-/plugin marketplace update my-turn-alert   # 更新到最新版
-/plugin disable my-turn-alert@my-turn-alert   # 暫時關閉
-/plugin uninstall my-turn-alert@my-turn-alert # 移除
+/plugin marketplace update my-turn-alert   # update to the latest version
+/plugin disable my-turn-alert@my-turn-alert   # temporarily turn off
+/plugin uninstall my-turn-alert@my-turn-alert # remove
 ```
 
-## 🎯 觸發時機
+## 🎯 When does it trigger?
 
-預設監聽以下事件,涵蓋「AI 沒在跑、輪到你或需要你查看」的所有時機:
+By default it listens to the following events, covering every moment when "the AI isn't running — it's your turn or needs your attention":
 
-| 事件 | 何時跳 |
+| Event | When it pops |
 | --- | --- |
-| **Stop** | Claude 每次回應結束、純文字提問後、等待輸入前 |
-| **StopFailure** | API 錯誤:HTTP 400(invalid_request)、429(rate_limit)、5xx(server_error)、overloaded、billing_error、max_output_tokens(context 超限)等 |
-| **Notification** (`permission_prompt`) | Claude 要你授權使用工具時 |
-| **Notification** (`idle_prompt`) | Claude 閒置等待你輸入時 |
-| **Notification** (`elicitation_dialog`) | MCP 工具中途請求結構化輸入時 |
+| **Stop** | Every time Claude finishes a response, after a plain-text question, before waiting for input |
+| **StopFailure** | API errors: HTTP 400 (invalid_request), 429 (rate_limit), 5xx (server_error), overloaded, billing_error, max_output_tokens (context overflow), etc. |
+| **Notification** (`permission_prompt`) | Claude asks you to authorize a tool |
+| **Notification** (`idle_prompt`) | Claude is idle waiting for your input |
+| **Notification** (`elicitation_dialog`) | An MCP tool requests structured input mid-run |
 
-**不監聽** `SubagentStop`(子代理結束時主流程仍在跑,非「輪到人」)。
+`SubagentStop` is **not** monitored (the main loop is still running when a subagent finishes — not a "human's turn" moment).
 
-這些設定寫在 [`hooks/hooks.json`](./hooks/hooks.json),想改觸發時機可自行編輯。
+These settings live in [`hooks/hooks.json`](./hooks/hooks.json); edit it to change the trigger events.
 
-## 🖼️ 自訂圖片
+## 🖼️ Custom Images
 
-**零設定,放圖即生效**——把你的圖片(建議 PNG)丟進:
+**Zero configuration — drop images in and they work.** Put your images (PNG recommended) into:
 
-| 系統 | 路徑 |
+| OS | Path |
 | --- | --- |
 | Windows | `%USERPROFILE%\.claude\alert-images\` |
 | macOS | `~/.claude/alert-images/` |
 
-放幾張就顯示幾張;每個 CLI 按檔名順序(不分大小寫)依序佔座,之後固定用同一張。圖不夠分時循環重複。
+As many images as you drop in get used; each CLI claims a seat in filename order (case-insensitive) and keeps the same image afterwards. When there are more CLIs than images, images cycle.
 
-**圖片來源優先順序**(由高到低,逐級退路):
+**Image source priority** (highest to lowest, each level a fallback):
 
-1. **`~/.claude/alert-images/` 內有圖** → 多圖模式,每個 CLI 分配一張
-2. **空了 → 自動生成 001..100 編號圖**(寫到 `~/.claude/alert-need-human/auto-images/`,**不動你的素材夾**;`ALERT_DISABLE_AUTOGEN=1` 可關)
-3. 舊單張 `~/.claude/alert-image.png` 存在 → 所有 CLI 共用這張(向後相容)
-4. 以上皆無 → 內建預設圖 `assets/default-alert.png`
-5. 連內建圖都找不到 → renderer 畫黃底紅框「載入失敗」提示(**永不白屏**)
+1. **Images exist in `~/.claude/alert-images/`** → multi-image mode, one image per CLI
+2. **Empty → 100 numbered images (001..100) are auto-generated** (written to `~/.claude/alert-need-human/auto-images/`, **your asset folder is never touched**; disable with `ALERT_DISABLE_AUTOGEN=1`)
+3. Legacy single image `~/.claude/alert-image.png` exists → all CLIs share it (backward compatible)
+4. None of the above → built-in default image `assets/default-alert.png`
+5. Even the built-in image is missing → the renderer draws a yellow "load failed" placeholder with a red border (**never a blank window**)
 
-> 💡 圖片格式建議 **PNG**:macOS 的 Tkinter 只吃 PNG / GIF;Windows 支援 PNG / JPG / GIF / BMP。跨平台一致就統一用 PNG。
+> 💡 **PNG recommended**: Tkinter on macOS only accepts PNG / GIF; Windows supports PNG / JPG / GIF / BMP. Use PNG for cross-platform consistency.
 
-## 🧹 彈窗什麼時候消失?
+## 🧹 When do popups disappear?
 
-- **點圖** → 立刻關閉,同時把對應的 CLI 視窗叫到前景。
-- **切回對應 CLI**(以視窗 hwnd 精準比對,不是 process name 全域比對):
-  - 彈窗出現時你**不在**那個 CLI → 切回該 CLI 視窗即自動關。
-  - 彈窗出現時你**已經在**那個 CLI → 需在該視窗**再點一下滑鼠或敲一個鍵**才關;沒有輸入活動的話圖會一直留著等你。
-- **最低顯示 1.5 秒**內絕不關,避免一瞬白屏。
-- 點一張圖只關那一張;其他 CLI 的圖繼續顯示。
-- 同一 CLI 連續觸發會覆寫自己的圖,不會疊一堆。
-- **同時最多 100 張**(`ALERT_MAX_POPUPS`):先到先服務;滿了之後的新 CLI 不彈圖,舊圖關閉釋出空位後才再服務。
+- **Click the image** → closes immediately and brings the matching CLI window to the foreground.
+- **Switch back to the matching CLI** (matched precisely by window hwnd, not by global process name):
+  - You were **not** in that CLI when the popup appeared → switching back to it auto-closes the popup.
+  - You were **already** in that CLI when the popup appeared → it takes **one more click or keypress** in that window to close; with no input activity the image stays and waits for you.
+- **Minimum display time of 1.5 s** — never closes sooner, avoiding a blink-and-miss flash.
+- Clicking one image only closes that one; other CLIs' images stay up.
+- Repeated triggers from the same CLI overwrite its own image — no stacking.
+- **At most 100 at once** (`ALERT_MAX_POPUPS`): first come, first served; once full, new CLIs don't pop until old images close and free up slots.
 
-## ⚙️ 進階設定
+## ⚙️ Advanced Configuration
 
-### 網格大小、位置、間距
+### Grid size, position, spacing
 
-預設值寫在彈窗腳本最上方(`scripts/show-popup.ps1` 與 `show-popup.sh`),想改就改:
+Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `show-popup.sh`); edit them as you like:
 
-| 項目 | 預設 | 變數(Windows / macOS) | 說明 |
+| Item | Default | Variable (Windows / macOS) | Description |
 | --- | --- | --- | --- |
-| 每列上限 | 3 | `$MaxPerRow` / `MAX_PER_ROW` | 超過才換行成網格 |
-| 版面寬比例 | 0.40 | `$MaxLayoutWidthRatio` / `MAX_LAYOUT_WIDTH_RATIO` | 總版面寬 ÷ 螢幕寬上限 |
-| 格子間距 | 12 px | `$GapPx` / `GAP` | 圖與圖之間留白 |
-| 右下角邊距 | 20 px | `$MarginPx` / `MARGIN` | 離螢幕右下角的距離 |
-| 輪詢間隔 | 300 ms | `$PollMs` / `POLL_MS` | renderer 掃狀態夾與前景偵測的間隔 |
+| Max per row | 3 | `$MaxPerRow` / `MAX_PER_ROW` | Wraps into a grid beyond this |
+| Layout width ratio | 0.40 | `$MaxLayoutWidthRatio` / `MAX_LAYOUT_WIDTH_RATIO` | Cap on total layout width ÷ screen width |
+| Cell gap | 12 px | `$GapPx` / `GAP` | Whitespace between images |
+| Corner margin | 20 px | `$MarginPx` / `MARGIN` | Distance from the bottom-right screen corner |
+| Poll interval | 300 ms | `$PollMs` / `POLL_MS` | How often the renderer scans the state folder and foreground window |
 
-**自適應網格排列規則**:1/2/3 張一排 → 4 張 2×2 → 5/6 張 3×2 → 更多依 `cols = min(總數, MaxPerRow)` 換行。每張圖等比縮放不裁切,整體高度不超出螢幕工作區。
+**Adaptive grid rules**: 1/2/3 images in one row → 4 as 2×2 → 5/6 as 3×2 → beyond that wraps with `cols = min(total, MaxPerRow)`. Each image scales proportionally without cropping; total height never exceeds the screen work area.
 
-**多螢幕**:預設顯示在「最新一張 alert 的 CLI」所在螢幕右下角;設 `ALERT_MONITOR=N`(1-based)可固定顯示在第 N 個螢幕(Windows;超界回退預設行為)。
+**Multi-monitor**: by default popups show in the bottom-right of the screen where the most recent alert's CLI lives; set `ALERT_MONITOR=N` (1-based) to pin them to monitor N (Windows; out-of-range falls back to the default behavior).
 
-### 環境變數
+### Environment variables
 
-| 變數 | 預設 | 用途 |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | 狀態夾(測試/沙箱用) |
-| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 使用者素材夾 |
-| `ALERT_MAX_POPUPS` | `100` | 同時可見上限(先到先服務;滿了之後的新 CLI 不彈圖) |
-| `ALERT_MONITOR` | 自動 | 指定顯示在第 N 個螢幕(1-based);未設或超界時用最新 alert 的 CLI 所在螢幕 |
-| `ALERT_DISABLE_AUTOGEN` | `0` | 設 `1` 關閉空資料夾時自動生成 001..100 |
-| `ALERT_DEFAULT_IMAGE` | plugin 內建 | 全部退路都失敗時的最終預設圖 |
-| `ALERT_LOCK_STALE_SECS` | `30` | 鎖目錄超過此齡視為孤兒(被 kill 的 hook 留下的),自動破鎖 |
-| `ALERT_WINCAP_TIMEOUT` | `6` | 抓終端機視窗的 PowerShell 呼叫上限秒數;超時降級為 hwnd=0 |
+| `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | State folder (for tests/sandboxing) |
+| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | User asset folder |
+| `ALERT_MAX_POPUPS` | `100` | Max popups visible at once (first come, first served; new CLIs wait once full) |
+| `ALERT_MONITOR` | auto | Pin popups to monitor N (1-based); unset or out-of-range uses the most recent alert's CLI screen |
+| `ALERT_DISABLE_AUTOGEN` | `0` | Set `1` to disable auto-generating 001..100 when the image folder is empty |
+| `ALERT_DEFAULT_IMAGE` | plugin built-in | Final fallback image when every other source fails |
+| `ALERT_LOCK_STALE_SECS` | `30` | Lock directories older than this are treated as orphans (left by killed hooks) and broken automatically |
+| `ALERT_WINCAP_TIMEOUT` | `6` | Timeout in seconds for the PowerShell call that captures the terminal window; on timeout degrades to hwnd=0 |
 
-## 🪟 視窗綁定與探針(Windows)
+## 🪟 Window binding & the probe (Windows)
 
-**「點圖切到對應 CLI」靠的是綁定終端機視窗 handle。** 預設認得 Windows Terminal、PowerShell、cmd、VS Code 內建終端機等(清單在 `scripts/get-window.ps1` 頂端的 `$termNames`)。
+**"Click to jump back to the right CLI" relies on binding the terminal window handle.** Windows Terminal, PowerShell, cmd, the VS Code integrated terminal and more are recognized by default (the list is `$termNames` at the top of `scripts/get-window.ps1`).
 
-**如果點圖沒切到對的 CLI(或切不過去)**:
+**If clicking doesn't switch to the right CLI (or doesn't switch at all):**
 
-1. 在你實際跑 Claude Code 的終端機執行診斷探針:
+1. Run the diagnostic probe from the terminal where you actually run Claude Code:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File "腳本路徑/scripts/probe-window.ps1"
+   powershell -ExecutionPolicy Bypass -File "path-to-scripts/scripts/probe-window.ps1"
    ```
-   (「腳本路徑」= plugin 安裝目錄,通常在 `~/.claude/plugins/...`)
-2. 探針會將終端機程序樹與視窗資訊 dump 至 `~/.claude/alert-need-human/probe.txt`。
-3. 打開該檔,找到你的終端機程序名(例如 `Tabby.exe` / `Hyper.exe` / `Cmder.exe`),加進 `scripts/get-window.ps1` 頂端的 `$termNames` 陣列。
-4. 下次彈窗就能正確切換了。
+   ("path-to-scripts" = the plugin install directory, usually under `~/.claude/plugins/...`)
+2. The probe dumps the terminal process tree and window info to `~/.claude/alert-need-human/probe.txt`.
+3. Open that file, find your terminal's process name (e.g. `Tabby.exe` / `Hyper.exe` / `Cmder.exe`), and add it to the `$termNames` array at the top of `scripts/get-window.ps1`.
+4. The next popup will switch correctly.
 
-**macOS 限制**:「點圖切到正確分頁」為盡力而為,可能僅能把終端機 App 叫到前面(無法精準辨識 tab)。
+**macOS limitation**: "click to jump to the exact tab" is best-effort — it may only be able to bring the terminal app to the front (cannot identify a specific tab).
 
-## 🩺 疑難排解
+## 🩺 Troubleshooting
 
-| 症狀 | 可能原因與解法 |
+| Symptom | Likely cause & fix |
 | --- | --- |
-| 裝完完全沒反應 | 忘了 `/plugin enable ...` 或 `/reload-plugins`(見安裝第三步) |
-| Windows 沒彈窗 | 需要 Git Bash(Claude Code 在 Windows 預設用它跑 hook);PowerShell 須能執行(本 plugin 已用 `-ExecutionPolicy Bypass`) |
-| macOS 沒彈窗 | 需要可用的 `python3` + Tkinter;缺 Tkinter 時 renderer 會安靜結束。裝好 python3-tk 即可 |
-| 點圖沒切到對的 CLI | 跑一次 `probe-window.ps1`(見上方章節),把你的終端機程序名加進清單 |
-| macOS 切不到正確分頁 | 已知限制,僅能把終端機 App 叫到前面 |
-| 想暫時關掉 | `/plugin disable my-turn-alert@my-turn-alert` |
-| 之前會彈、後來漸漸不彈了 | v1.4.0 以前的孤兒鎖問題;v1.4.1 起自動破鎖自癒。手動急救:刪 `~/.claude/alert-need-human/` 下的 `*.lock` 目錄 |
-| 彈窗跳出時打字被打斷 | 不應該發生(彈窗不搶焦點);若仍中斷,請開 issue 回報終端機類型與環境 |
+| Nothing happens after installing | You forgot `/plugin enable ...` or `/reload-plugins` (see installation step three) |
+| No popup on Windows | Requires Git Bash (Claude Code uses it for hooks on Windows by default); PowerShell must be runnable (this plugin already uses `-ExecutionPolicy Bypass`) |
+| No popup on macOS | Requires a working `python3` + Tkinter; without Tkinter the renderer exits silently. Install python3-tk |
+| Click switches to the wrong CLI | Run `probe-window.ps1` once (see section above) and add your terminal's process name to the list |
+| Can't switch to the right tab on macOS | Known limitation — can only bring the terminal app to the front |
+| Want to turn it off temporarily | `/plugin disable my-turn-alert@my-turn-alert` |
+| Used to pop, gradually stopped | Orphan-lock issue before v1.4.0; v1.4.1+ self-heals by breaking stale locks. Manual fix: delete the `*.lock` directories under `~/.claude/alert-need-human/` |
+| Popup interrupts your typing | Shouldn't happen (popups never steal focus); if it still does, please open an issue with your terminal type and environment |
 
-## 🧩 運作原理
+## 🧩 How It Works
 
 ```
-事件(Stop / StopFailure / Notification:permission|idle|elicitation)
-  └─ hooks/hooks.json 觸發
-       └─ bash scripts/alert.sh   ← 薄「寫入器」:寫狀態 + 確保 renderer 在跑,立即返回
-            ├─ 讀 stdin JSON(取 session_id、cwd)
-            ├─ 抓本 CLI 終端機視窗 handle + 終端機 pid
-            ├─ 依「佔座規則」決定本 CLI 配哪張圖
-            ├─ 寫 ~/.claude/alert-need-human/pending/<key>.txt
-            └─ 搶 renderer.lock → 若 renderer 未跑則背景啟動 → 釋放鎖
-                 └─ 長駐 renderer(Windows: PowerShell+WinForms / macOS: Python+Tkinter)
-                      ├─ 輪詢 pending/:新增→加入網格重排;刪除→移除重排;空→自我結束
-                      ├─ 前景視窗 == 某圖的 hwnd → 刪該圖
-                      └─ 點某圖 → SetForegroundWindow(該圖 hwnd) + 刪該圖
+Event (Stop / StopFailure / Notification: permission|idle|elicitation)
+  └─ triggered via hooks/hooks.json
+       └─ bash scripts/alert.sh   ← thin "writer": writes state + ensures renderer is running, returns immediately
+            ├─ reads stdin JSON (session_id, cwd)
+            ├─ captures this CLI's terminal window handle + terminal pid
+            ├─ assigns this CLI an image via the "seat-claiming" rule
+            ├─ writes ~/.claude/alert-need-human/pending/<key>.txt
+            └─ grabs renderer.lock → starts renderer in background if not running → releases lock
+                 └─ long-lived renderer (Windows: PowerShell+WinForms / macOS: Python+Tkinter)
+                      ├─ polls pending/: added → join grid & re-layout; removed → drop & re-layout; empty → exit
+                      ├─ foreground window == some popup's hwnd → close that popup
+                      └─ click a popup → SetForegroundWindow(its hwnd) + close that popup
 ```
 
-彈窗以背景方式啟動,`alert.sh` 數百毫秒內返回,**不會卡住 Claude** 的下一步。
+The popup starts in the background; `alert.sh` returns within a few hundred milliseconds and **never blocks Claude's** next step.
 
-**狀態資料夾** `~/.claude/alert-need-human/`(跨 session 共享;不放專案目錄內):
+**State folder** `~/.claude/alert-need-human/` (shared across sessions; never inside project directories):
 
 ```
 ~/.claude/alert-need-human/
-├── pending/<key>.txt     ← 一個待顯示 alert(以終端機 pid 為主鍵)
-├── renderer.pid          ← 長駐 renderer 的 PID(單一實例)
-├── renderer.lock         ← 啟動互斥鎖
-├── assignments.tsv       ← key → 圖片路徑 的佔座記錄(穩定綁定)
-├── auto-images/          ← 自動生成的編號圖(不動使用者素材夾)
-└── seq                   ← 全域遞增序號(決定網格排列先後)
+├── pending/<key>.txt     ← one pending alert (keyed by terminal pid)
+├── renderer.pid          ← PID of the long-lived renderer (single instance)
+├── renderer.lock         ← startup mutex
+├── assignments.tsv       ← key → image-path seat assignments (stable binding)
+├── auto-images/          ← auto-generated numbered images (user asset folder untouched)
+└── seq                   ← global monotonic sequence (determines grid ordering)
 ```
 
-**自癒**:renderer 每輪輪詢時,若某 pending 檔的終端機 pid 已不存在(CLI 已關)→ 刪該檔,避免孤兒圖;`pending/` 空時 renderer 自我結束。
+**Self-healing**: on every poll, if a pending file's terminal pid no longer exists (CLI closed) the renderer deletes that file, preventing orphan popups; when `pending/` is empty the renderer exits.
 
-### 目錄結構
+### Directory layout
 
 ```
 my-turn-alert/
 ├── .claude-plugin/
-│   ├── plugin.json          # plugin 身分
-│   └── marketplace.json     # 安裝來源定義
+│   ├── plugin.json          # plugin identity
+│   └── marketplace.json     # install source definition
 ├── hooks/
-│   └── hooks.json           # Stop / StopFailure / Notification hook → alert.sh
+│   └── hooks.json           # Stop / StopFailure / Notification hooks → alert.sh
 ├── scripts/
-│   ├── alert.sh             # 跨平台分派器:偵測 OS、寫狀態、拉起 renderer
-│   ├── popup-common.sh      # 共用函式:圖片探索、佔座分配、檔案鎖
-│   ├── show-popup.ps1       # Windows renderer(PowerShell + WinForms 網格)
-│   ├── show-popup.sh        # macOS renderer(Python + Tkinter 網格)
-│   ├── get-window.ps1       # Windows 終端機視窗解析(含 ConPTY 委派處理)
-│   ├── probe-window.ps1     # Windows 視窗綁定診斷探針
-│   └── lib/                 # 自動生成編號圖、網格數學
-├── assets/                  # 內建預設圖與 README 圖片
-├── tests/                   # 測試(bash / PowerShell / Python)
-└── docs/SPEC.md             # 完整設計規格
+│   ├── alert.sh             # cross-platform dispatcher: detect OS, write state, start renderer
+│   ├── popup-common.sh      # shared functions: image discovery, seat assignment, file locks
+│   ├── show-popup.ps1       # Windows renderer (PowerShell + WinForms grid)
+│   ├── show-popup.sh        # macOS renderer (Python + Tkinter grid)
+│   ├── get-window.ps1       # Windows terminal window resolution (incl. ConPTY delegation)
+│   ├── probe-window.ps1     # Windows window-binding diagnostic probe
+│   └── lib/                 # auto-generated numbered images, grid math
+├── assets/                  # built-in default image & README images
+├── tests/                   # tests (bash / PowerShell / Python)
+└── docs/SPEC.md             # full design spec
 ```
 
-## 🛡️ 安全邊界
+## 🛡️ Security Boundary
 
-本 plugin 嚴格只讀寫以下位置;**完全不動其他系統設定**:
+This plugin strictly reads/writes only the locations below; **it never touches any other system setting**:
 
-| 位置 | 讀 | 寫 | 用途 |
+| Location | Read | Write | Purpose |
 | --- | --- | --- | --- |
-| `~/.claude/alert-need-human/`(state) | ✅ | ✅ | pending、佔座、序號、renderer.pid、各 .lock、auto-images/ |
-| `~/.claude/alert-images/`(使用者素材) | ✅ | ❌ | 你放的圖片,本 plugin 視為唯讀 |
-| plugin 安裝目錄 | ✅(讀腳本) | ❌(runtime) | 只在 install/update 時被 Claude Code 寫 |
+| `~/.claude/alert-need-human/` (state) | ✅ | ✅ | pending, seat assignments, sequence, renderer.pid, locks, auto-images/ |
+| `~/.claude/alert-images/` (user assets) | ✅ | ❌ | Your images — treated as read-only by this plugin |
+| Plugin install directory | ✅ (scripts) | ❌ (runtime) | Only written by Claude Code during install/update |
 
-**不會碰**:登錄檔、PATH、`~/.bashrc`/`~/.zshrc`/profile.ps1、開機啟動、Scheduled Task、Windows 服務、全域鍵盤/滑鼠 Hook(`SetWindowsHookEx` 一律不用;`GetLastInputInfo` 是被動讀取 API)、其他使用者目錄。
+**Never touched**: registry, PATH, `~/.bashrc`/`~/.zshrc`/profile.ps1, startup entries, Scheduled Tasks, Windows services, global keyboard/mouse hooks (`SetWindowsHookEx` is never used; `GetLastInputInfo` is a passive read-only API), other users' directories.
 
-防禦機制:所有從 JSON/stdin/檔案讀進來的 key 一律過白名單 `[A-Za-z0-9_.-]{1,128}`;原子寫入 realpath-validate 拒絕 `..` 路徑逃逸;PID 比對做 regex escape 防 injection;renderer 端再次驗證檔名與內容一致。
+Defensive measures: every key read from JSON/stdin/files passes the whitelist `[A-Za-z0-9_.-]{1,128}`; atomic writes realpath-validate to reject `..` path escapes; PID matching is regex-escaped against injection; the renderer re-validates filename/content consistency.
 
-詳細資料流、關閉狀態機與安全分析請見 [`docs/SPEC.md`](./docs/SPEC.md)。
+For detailed data flow, the popup close state machine and security analysis, see [`docs/SPEC.md`](./docs/SPEC.md).
 
-## 🧪 測試
+## 🧪 Tests
 
 ```bash
 bash tests/run-tests.sh
 ```
 
-涵蓋:狀態夾與原子寫入、圖片佔座與循環、端到端 pending 內容、路徑轉換、上限閘門與 regex-injection 防護、自動生成 idempotent、網格數學跨平台一致(詳見 [`docs/SPEC.md`](./docs/SPEC.md) 測試矩陣)。
+Coverage: state folder & atomic writes, image seat assignment & cycling, end-to-end pending content, path conversion, cap gating & regex-injection defenses, idempotent auto-generation, cross-platform grid-math consistency (see the test matrix in [`docs/SPEC.md`](./docs/SPEC.md)).
 
-## 授權
+## License
 
 [MIT](./LICENSE)
-
----
-
-<div align="center">
-
-**English summary**
-
-*When you run multiple Claude Code CLIs at once, it's easy to miss the moment one finishes or gets stuck waiting for you. This plugin hooks into Claude Code's Stop / StopFailure / Notification events and pops up a per-CLI image in the corner of your screen — click the image to jump straight back to that CLI. Each CLI gets its own image (drop your own into `~/.claude/alert-images/`), popups arrange themselves in an adaptive grid, never steal focus, and auto-dismiss when you return to the CLI. Full support on Windows, best-effort on macOS.*
-
-```text
-/plugin marketplace add my-turn-alert/my-turn-alert
-/plugin install my-turn-alert@my-turn-alert
-/plugin enable my-turn-alert@my-turn-alert
-```
-
-</div>
