@@ -18,7 +18,7 @@ def _color(i: int, s: float = 0.35, v: float = 0.95) -> tuple[int, int, int]:
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def _try_pillow(out_dir: str) -> bool:
+def _try_pillow(out_dir: str, count: int) -> bool:
     try:
         from PIL import Image, ImageDraw, ImageFont
     except Exception:
@@ -37,7 +37,7 @@ def _try_pillow(out_dir: str) -> bool:
             continue
     if font is None:
         font = ImageFont.load_default()
-    for i in range(1, 101):
+    for i in range(1, count + 1):
         name = f"{i:03d}.png"
         path = os.path.join(out_dir, name)
         if os.path.exists(path):
@@ -55,13 +55,13 @@ def _try_pillow(out_dir: str) -> bool:
                       text, fill=fg, font=font)
         except Exception:
             draw.text((size / 2, size / 2), text, fill=fg, font=font, anchor="mm")
-        tmp = path + ".tmp"
+        tmp = f"{path}.{os.getpid()}.tmp"  # per-process tmp:種子與背景補齊行程可能同時在跑
         img.save(tmp, "PNG")
         os.replace(tmp, path)
     return True
 
 
-def _try_tk(out_dir: str) -> bool:
+def _try_tk(out_dir: str, count: int) -> bool:
     try:
         import tkinter as tk
     except Exception:
@@ -69,7 +69,7 @@ def _try_tk(out_dir: str) -> bool:
     size = 320
     root = tk.Tk()
     root.withdraw()
-    for i in range(1, 101):
+    for i in range(1, count + 1):
         name = f"{i:03d}.gif"  # tk.PhotoImage 只能寫 GIF/PPM
         path = os.path.join(out_dir, name)
         if os.path.exists(path):
@@ -77,7 +77,7 @@ def _try_tk(out_dir: str) -> bool:
         bg = _color(i)
         photo = tk.PhotoImage(width=size, height=size)
         photo.put(f"#{bg[0]:02x}{bg[1]:02x}{bg[2]:02x}", to=(0, 0, size, size))
-        tmp = path + ".tmp"
+        tmp = f"{path}.{os.getpid()}.tmp"
         photo.write(tmp, format="gif")
         os.replace(tmp, path)
     root.destroy()
@@ -86,13 +86,19 @@ def _try_tk(out_dir: str) -> bool:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("usage: gen_auto_images.py <out-dir>", file=sys.stderr)
+        print("usage: gen_auto_images.py <out-dir> [count]", file=sys.stderr)
         return 2
     out_dir = sys.argv[1]
+    count = 100
+    if len(sys.argv) >= 3:
+        try:
+            count = max(1, min(100, int(sys.argv[2])))
+        except ValueError:
+            pass
     os.makedirs(out_dir, exist_ok=True)
-    if _try_pillow(out_dir):
+    if _try_pillow(out_dir, count):
         return 0
-    if _try_tk(out_dir):
+    if _try_tk(out_dir, count):
         return 0
     print("no image library available; auto-gen skipped", file=sys.stderr)
     return 1

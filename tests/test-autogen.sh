@@ -20,6 +20,8 @@ esac
 # 快照使用者素材夾（事後驗證沒被寫）
 USER_IMG_SNAP_BEFORE="$(find "$ALERT_IMAGE_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')"
 
+# SEED=100 → 全同步生成（確定性；背景補齊段不啟動）
+export ALERT_AUTOGEN_SEED=100
 pc_ensure_numbered_images
 
 USER_IMG_SNAP_AFTER="$(find "$ALERT_IMAGE_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')"
@@ -45,6 +47,25 @@ if [ "$CAN_GEN" = 1 ]; then
   ok "$N2" "$N" "idempotent (count unchanged on second call)"
 else
   echo "(skip autogen body: no powershell/python3+tkinter on this host)"
+fi
+
+# 種子模式：同步段只生 ALERT_AUTOGEN_SEED 張、背景補齊到 100（v1.4.5 冷啟動修正）
+if [ "$CAN_GEN" = 1 ]; then
+  rm -rf "$ALERT_STATE_DIR/auto-images"
+  ALERT_AUTOGEN_SEED=3 pc_ensure_numbered_images
+  AUTO_DIR="$(pc_auto_image_dir)"
+  NS="$(find "$AUTO_DIR" -maxdepth 1 -type f -name '[0-9][0-9][0-9].png' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$NS" -ge 3 ] && [ "$NS" -lt 100 ]; then SEEDOK="yes"; else SEEDOK="no"; fi
+  ok "$SEEDOK" "yes" "seed mode generates only SEED images synchronously (got $NS)"
+  # 背景補齊（獨立入口；alert.sh 於頂層呼叫）：最多等 90 秒補滿 100 張
+  pc_topup_auto_images_async
+  i=0; NBG="$NS"
+  while [ "$i" -lt 90 ]; do
+    NBG="$(find "$AUTO_DIR" -maxdepth 1 -type f -name '[0-9][0-9][0-9].png' 2>/dev/null | wc -l | tr -d ' ')"
+    [ "$NBG" -ge 100 ] && break
+    sleep 1; i=$((i+1))
+  done
+  ok "$NBG" "100" "background top-up completes to 100"
 fi
 
 # Disable flag

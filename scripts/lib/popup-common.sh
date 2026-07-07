@@ -296,40 +296,81 @@ pc_list_auto_images() {
   done | LC_ALL=C sort -f
 }
 
+_pc_gen_images() {
+  # $1=out dir $2=生成張數上限（001..$2）。呼叫底層生成器；stdout/stderr 全吞。
+  local dir="$1" n="$2"
+  local lib_dir; lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      local PS=powershell
+      command -v powershell.exe >/dev/null 2>&1 && PS=powershell.exe
+      local GS="$lib_dir/gen-auto-images.ps1"
+      local GS_W="$GS" DIR_W="$dir"
+      if command -v cygpath >/dev/null 2>&1; then
+        GS_W="$(cygpath -w "$GS")"
+        DIR_W="$(cygpath -w "$dir")"
+      fi
+      "$PS" -NoProfile -ExecutionPolicy Bypass -File "$GS_W" -OutDir "$DIR_W" -Count "$n" >/dev/null 2>&1
+      ;;
+    *)
+      if command -v python3 >/dev/null 2>&1; then
+        python3 "$lib_dir/gen_auto_images.py" "$dir" "$n" >/dev/null 2>&1
+      fi
+      ;;
+  esac
+  return 0
+}
+
 pc_ensure_numbered_images() {
   # 若使用者素材夾為空、auto-gen 未停用，且 auto-images 還沒有齊備 100 張，
   # 則於 pc_state_dir/auto-images 內生成 001.png..100.png。
   # 寫入位置永遠在 state_dir 內，遵守安全邊界。
+  #
+  # 冷啟動預算（v1.4.5）：一次同步生滿 100 張在慢機器上超過 hook 的 30 秒
+  # timeout —— hook 被殺 = pending 沒寫 = 首次安裝後永遠不彈（實際故障）。
+  # 故拆兩段：
+  #   同步：只生前 ALERT_AUTOGEN_SEED 張（預設 8，約 1~2 秒），當下夠分即可；
+  #   背景：detach 一支補齊到 100 的行程，不佔 hook 預算。
+  #   生成器 per-PID tmp + 原子 rename + 已存在即跳過 → 種子與補齊並行也安全。
+  # 測試/舊行為可設 ALERT_AUTOGEN_SEED=100（全同步、無背景段）。
   [ "${ALERT_DISABLE_AUTOGEN:-0}" = "1" ] && return 1
-  _pc_gen() {
+  local seed="${ALERT_AUTOGEN_SEED:-8}"
+  case "$seed" in (*[!0-9]*|'') seed=8 ;; esac
+  [ "$seed" -lt 1 ] && seed=1
+  [ "$seed" -gt 100 ] && seed=100
+  _pc_gen_seed() {
     local dir; dir="$(pc_auto_image_dir)"
     mkdir -p "$dir" 2>/dev/null
     local count
     count="$(find "$dir" -maxdepth 1 -type f -name '[0-9][0-9][0-9].png' 2>/dev/null | wc -l | tr -d ' ')"
     [ -z "$count" ] && count=0
-    [ "$count" -ge 100 ] && return 0
-    local lib_dir; lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    case "$(uname -s)" in
-      MINGW*|MSYS*|CYGWIN*)
-        local PS=powershell
-        command -v powershell.exe >/dev/null 2>&1 && PS=powershell.exe
-        local GS="$lib_dir/gen-auto-images.ps1"
-        local GS_W="$GS" DIR_W="$dir"
-        if command -v cygpath >/dev/null 2>&1; then
-          GS_W="$(cygpath -w "$GS")"
-          DIR_W="$(cygpath -w "$dir")"
-        fi
-        "$PS" -NoProfile -ExecutionPolicy Bypass -File "$GS_W" -OutDir "$DIR_W" >/dev/null 2>&1
-        ;;
-      *)
-        if command -v python3 >/dev/null 2>&1; then
-          python3 "$lib_dir/gen_auto_images.py" "$dir" >/dev/null 2>&1
-        fi
-        ;;
-    esac
-    return 0
+    [ "$count" -ge "$1" ] && return 0
+    _pc_gen_images "$dir" "$1"
   }
-  pc_with_lock autogen _pc_gen
+  pc_with_lock autogen _pc_gen_seed "$seed"
+  if [ "$seed" -ge 100 ]; then
+    return 0
+  fi
+  # 補齊到 100 的背景段【不可】在這裡直接 spawn：本函式常被
+  # IMAGE="$(pc_assign_image ...)" 的命令替換呼叫，背景子行程會繼承命令替換的
+  # 管線寫端 → 呼叫端等到補齊做完才返回，seed 的省時全數泡湯（實測 24 秒）。
+  # 呼叫端（alert.sh）需自行在【頂層】呼叫 pc_topup_auto_images_async。
+  return 0
+}
+
+pc_topup_auto_images_async() {
+  # 背景補齊 auto-images 到 100 張。必須從「非命令替換」的頂層呼叫。
+  # stdin/stdout/stderr 全接 /dev/null，避免任何呼叫端等待管線 EOF。
+  [ "${ALERT_DISABLE_AUTOGEN:-0}" = "1" ] && return 0
+  local dir; dir="$(pc_auto_image_dir)"
+  # 使用者素材夾有圖 → 根本不會用到 auto-images，不補
+  [ -n "$(pc_list_images)" ] && return 0
+  local total
+  total="$(find "$dir" -maxdepth 1 -type f -name '[0-9][0-9][0-9].png' 2>/dev/null | wc -l | tr -d ' ')"
+  [ -z "$total" ] && total=0
+  [ "$total" -ge 100 ] && return 0
+  ( _pc_gen_images "$dir" 100 ) </dev/null >/dev/null 2>&1 &
+  return 0
 }
 
 pc_pending_count() {

@@ -154,6 +154,11 @@ cwd=${CWD}
 reason=${REASON}
 seq=${SEQ}"
 
+# --- 背景補齊 auto-images 到 100（僅首次安裝、素材夾空時有事做）。
+#     必須在頂層呼叫（不能在上面 IMAGE="$(...)" 的命令替換內），
+#     否則命令替換會等背景生成做完才返回，冷啟動直衝 hook timeout。 ---
+pc_topup_auto_images_async
+
 # --- 清孤兒（家務，排在產出之後；跳過自己剛寫的 KEY；renderer 每 2 秒也會自癒）---
 pc_cleanup_stale "$KEY"
 

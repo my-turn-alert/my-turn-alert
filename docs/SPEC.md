@@ -152,12 +152,22 @@ else:                              → tick
 
 當 `pc_list_images` 回傳空時，第一張 alert 觸發時呼叫 `pc_ensure_numbered_images`：
 
-- Windows：`scripts/lib/gen-auto-images.ps1`，單一 PowerShell 行程內用 `System.Drawing` 一次生成 100 張 320×320 PNG（每張不同色相 + 大字數字）。
+- Windows：`scripts/lib/gen-auto-images.ps1`，單一 PowerShell 行程內用 `System.Drawing` 生成 320×320 PNG（每張不同色相 + 大字數字）。
 - macOS / Linux：`scripts/lib/gen_auto_images.py`，優先 Pillow；無 Pillow 時退回 Tkinter PhotoImage 寫 GIF。
 - 寫入位置永遠是 `state_dir/auto-images/`，**從不寫使用者素材夾**。
-- 同 process 整批生成（不會 100 次冷啟動 PowerShell）。
-- 寫入用 `path.tmp` → `Move-Item -Force` 原子替換，避免 list 到半成品。
-- `pc_with_lock autogen` 串行化；若中途失敗，下次 alert 觸發時會補生缺漏的編號。
+- 寫入用 per-PID tmp → 原子 rename 替換，避免 list 到半成品；已存在的編號直接跳過。
+
+**冷啟動預算（v1.4.5）**：同步一次生滿 100 張在慢機器上會超過 hook timeout ——
+hook 被殺 = pending 沒寫 = 首次安裝後永遠不彈（v1.4.4 實際故障）。故拆兩段：
+
+- **同步種子段**：只生前 `ALERT_AUTOGEN_SEED` 張（預設 8，約 1~4 秒），當下夠分即可；
+  `pc_with_lock autogen` 串行化。
+- **背景補齊段**：`alert.sh` 寫完 pending 後於**頂層**呼叫 `pc_topup_auto_images_async`，
+  detach 一支行程補齊到 100，不佔 hook 預算。種子與補齊因 per-PID tmp + 已存在即跳過，
+  並行安全。**注意**：補齊不可在 `IMAGE="$(pc_assign_image ...)"` 的命令替換內 spawn ——
+  背景子行程會繼承命令替換的管線寫端，呼叫端會等到補齊做完才返回，省時全數泡湯。
+- 測試/舊行為可設 `ALERT_AUTOGEN_SEED=100`（全同步、無背景段）。
+- 若中途失敗，下次 alert 觸發時會補生缺漏的編號。
 
 ## 幽靈重現抑制（ack 戳記）
 

@@ -1,15 +1,15 @@
 {
   "hooks": {
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/alert.sh\"", "timeout": 30 } ] }
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/alert.sh\"", "timeout": 60 } ] }
     ],
     "StopFailure": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/alert.sh\"", "timeout": 30 } ] }
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/alert.sh\"", "timeout": 60 } ] }
     ],
     "Notification": [
       {
         "matcher": "permission_prompt|idle_prompt|elicitation_dialog",
-        "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/alert.sh\"", "timeout": 30 } ]
+        "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/alert.sh\"", "timeout": 60 } ]
       }
     ]
   }

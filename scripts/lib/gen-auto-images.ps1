@@ -7,7 +7,8 @@
 #   - 已存在的檔不覆蓋（idempotent）。
 #   - 全程使用 System.Drawing；不裝任何第三方相依。
 param(
-  [Parameter(Mandatory=$true)][string]$OutDir
+  [Parameter(Mandatory=$true)][string]$OutDir,
+  [int]$Count = 100
 )
 $ErrorActionPreference = 'Stop'
 
@@ -45,7 +46,9 @@ $fmt = New-Object System.Drawing.StringFormat
 $fmt.Alignment = [System.Drawing.StringAlignment]::Center
 $fmt.LineAlignment = [System.Drawing.StringAlignment]::Center
 
-for ($i = 1; $i -le 100; $i++) {
+if ($Count -lt 1) { $Count = 1 }
+if ($Count -gt 100) { $Count = 100 }
+for ($i = 1; $i -le $Count; $i++) {
   $name = "{0:D3}.png" -f $i
   $path = Join-Path $OutDir $name
   if (Test-Path -LiteralPath $path) { continue }
@@ -65,7 +68,7 @@ for ($i = 1; $i -le 100; $i++) {
     $rect = New-Object System.Drawing.RectangleF(0, 0, $size, $size)
     $g.DrawString("$i", $font, $brush, $rect, $fmt)
     $brush.Dispose(); $font.Dispose(); $pen.Dispose(); $g.Dispose()
-    $tmp = "$path.tmp"
+    $tmp = "$path.$PID.tmp"   # per-process tmp:種子行程與背景補齊行程可能同時在跑
     $bmp.Save($tmp, [System.Drawing.Imaging.ImageFormat]::Png)
     Move-Item -LiteralPath $tmp -Destination $path -Force
   } finally {
