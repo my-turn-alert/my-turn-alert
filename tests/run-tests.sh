@@ -11,6 +11,8 @@ echo "== bash: test-cap =="; [ -f "$HERE/test-cap.sh" ] && { bash "$HERE/test-ca
 echo "== bash: test-locks =="; [ -f "$HERE/test-locks.sh" ] && { bash "$HERE/test-locks.sh" || rc=1; }
 echo "== bash: test-autogen =="; [ -f "$HERE/test-autogen.sh" ] && { bash "$HERE/test-autogen.sh" || rc=1; }
 echo "== bash: test-image-dir-override =="; [ -f "$HERE/test-image-dir-override.sh" ] && { bash "$HERE/test-image-dir-override.sh" || rc=1; }
+echo "== bash: test-user-priority =="; [ -f "$HERE/test-user-priority.sh" ] && { bash "$HERE/test-user-priority.sh" || rc=1; }
+echo "== bash: test-session-binding =="; [ -f "$HERE/test-session-binding.sh" ] && { bash "$HERE/test-session-binding.sh" || rc=1; }
 echo "== bash: test-getwindow =="; [ -f "$HERE/test-getwindow.sh" ] && { bash "$HERE/test-getwindow.sh" || rc=1; }
 if command -v powershell.exe >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
   PS=powershell; command -v powershell.exe >/dev/null 2>&1 && PS=powershell.exe

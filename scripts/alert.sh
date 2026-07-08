@@ -131,10 +131,17 @@ if ! pc_cap_allows_key "${ALERT_MAX_POPUPS:-100}" "$KEY"; then
   pc_cap_allows_key "${ALERT_MAX_POPUPS:-100}" "$KEY" || exit 0
 fi
 
+# --- 使用者誤丟進 auto-images 的圖檔 → 先搬到 user-images（配圖前做，優先權才生效）---
+pc_migrate_user_images
+
 # --- 決定配圖 + 取序號 ---
-# 以 KEY（唯一）而非 TERM_PID 佔座：視窗抓取失敗時多個 CLI 的 term_pid 同為 0，
-# 用 term_pid 當鍵會讓它們共用同一行 assignment → 全部拿到同一張圖（v1.4.2 實際故障）。
-IMAGE="$(pc_assign_image "$KEY")"
+# 配圖鍵 = session_id（v1.5.0）：一個 Claude Code session 永遠綁同一張圖。
+# 舊版以 KEY（通常是 term_pid）佔座，term_pid 隨視窗/抓取結果變動 →
+# 同一個 session 會拿到不同張圖（實際故障：一個 session 在 tsv 疊出多行）。
+# 無 session_id 時才退回 KEY（pending 檔名鍵，保證唯一）。
+ASSIGN_KEY="$SESSION_KEY"
+[ -z "$ASSIGN_KEY" ] && ASSIGN_KEY="$KEY"
+IMAGE="$(pc_assign_image "$ASSIGN_KEY")"
 SEQ="$(pc_next_seq)"
 
 # 防白屏 Layer 1：先用 POSIX 形式驗證圖檔【實際存在】，壞路徑退回內建 default；

@@ -23,6 +23,14 @@ pc_auto_image_dir() {
   printf '%s' "$(pc_state_dir)/auto-images"
 }
 
+pc_user_image_dir() {
+  # 使用者專屬素材夾（v1.5.0）：state_dir/user-images，自動建立方便使用者找到。
+  # 與 ALERT_IMAGE_DIR（外部素材夾）並列為「使用者圖」來源；配圖時使用者圖恆優先。
+  local d; d="$(pc_state_dir)/user-images"
+  mkdir -p "$d" 2>/dev/null
+  printf '%s' "$d"
+}
+
 pc_sanitize_key() {
   # 將任意輸入正規化為「可安全當檔名」的 key：
   #   - 砍掉所有不在 [A-Za-z0-9_.-] 的字元（含 / \ NUL ..）。
@@ -264,36 +272,70 @@ pc_cleanup_stale() {
       pc_is_alive "$tpid" && alive=0 || alive=1
     fi
     if [ "$alive" = 1 ]; then
+      # 佔座以 session_id 為鍵（v1.5.0）；再試 pending 檔名 base 與 term_pid
+      # 清舊版遺留行。session key 須先 sanitize（值來自 pending 檔內容）。
+      local sid; sid="$(pc_sanitize_key "$(pc_read_field "$f" session_id)")"
       rm -f "$f" 2>/dev/null
-      # 佔座以 KEY 為鍵（= pending 檔名 base）；同時也試 term_pid 清舊版遺留行。
+      [ -n "$sid" ] && pc_release_assign "$sid"
       pc_release_assign "$(basename "$f" .txt)"
       pc_release_assign "$tpid"
     fi
   done
 }
 
-pc_list_images() {
-  local dir; dir="$(pc_image_dir)"
+_pc_list_dir_images() {
+  # $1=dir → 列出該夾第一層的圖檔（不排序；呼叫端自行 sort）。
+  local dir="$1" f
   [ -d "$dir" ] || return 0
-  local f
   for f in "$dir"/*; do
     [ -f "$f" ] || continue
     case "$(printf '%s' "$f" | tr 'A-Z' 'a-z')" in
       *.png|*.jpg|*.jpeg|*.gif|*.bmp) printf '%s\n' "$f" ;;
     esac
-  done | LC_ALL=C sort -f
+  done
+}
+
+pc_list_images() {
+  # 使用者圖來源（v1.5.0 起兩處合併）：
+  #   ALERT_IMAGE_DIR（外部素材夾，唯讀）+ state_dir/user-images（專屬資料夾）。
+  { _pc_list_dir_images "$(pc_image_dir)"; _pc_list_dir_images "$(pc_user_image_dir)"; } \
+    | LC_ALL=C sort -f
 }
 
 pc_list_auto_images() {
-  local dir; dir="$(pc_auto_image_dir)"
-  [ -d "$dir" ] || return 0
-  local f
-  for f in "$dir"/*; do
-    [ -f "$f" ] || continue
-    case "$(printf '%s' "$f" | tr 'A-Z' 'a-z')" in
-      *.png|*.jpg|*.jpeg|*.gif|*.bmp) printf '%s\n' "$f" ;;
-    esac
-  done | LC_ALL=C sort -f
+  _pc_list_dir_images "$(pc_auto_image_dir)" | LC_ALL=C sort -f
+}
+
+pc_migrate_user_images() {
+  # auto-images 內「非 autogen 編號檔（NNN.png）」的圖檔視為使用者誤放 →
+  # 搬到 user-images，並改寫 assignments.tsv 中指向舊路徑的行（既有綁定不破）。
+  # 非圖檔一律不動。與 assign 共用同一把鎖，避免搬移途中被選圖。
+  _pc_migrate() {
+    local auto udir af f base dest tmp
+    auto="$(pc_auto_image_dir)"
+    udir="$(pc_user_image_dir)"
+    af="$(pc_state_dir)/assignments.tsv"
+    [ -d "$auto" ] || return 0
+    for f in "$auto"/*; do
+      [ -f "$f" ] || continue
+      base="$(basename "$f")"
+      case "$base" in [0-9][0-9][0-9].png) continue ;; esac
+      case "$(printf '%s' "$base" | tr 'A-Z' 'a-z')" in
+        *.png|*.jpg|*.jpeg|*.gif|*.bmp) : ;;
+        *) continue ;;
+      esac
+      dest="$udir/$base"
+      [ -e "$dest" ] && dest="$udir/user-$base"   # 撞名避讓
+      mv -f "$f" "$dest" 2>/dev/null || continue
+      if [ -f "$af" ]; then
+        tmp="$af.tmp"
+        awk -v old="$f" -v new="$dest" -F'\t' 'BEGIN{OFS="\t"} $2==old{$2=new} {print}' \
+          "$af" > "$tmp" 2>/dev/null && mv -f "$tmp" "$af" 2>/dev/null
+      fi
+    done
+    return 0
+  }
+  pc_with_lock assign _pc_migrate
 }
 
 _pc_gen_images() {
@@ -363,11 +405,12 @@ pc_topup_auto_images_async() {
   # stdin/stdout/stderr 全接 /dev/null，避免任何呼叫端等待管線 EOF。
   [ "${ALERT_DISABLE_AUTOGEN:-0}" = "1" ] && return 0
   local dir; dir="$(pc_auto_image_dir)"
-  # 使用者素材夾有圖 → 根本不會用到 auto-images，不補
-  [ -n "$(pc_list_images)" ] && return 0
   local total
   total="$(find "$dir" -maxdepth 1 -type f -name '[0-9][0-9][0-9].png' 2>/dev/null | wc -l | tr -d ' ')"
   [ -z "$total" ] && total=0
+  # 還沒種子過 = 目前沒有溢位需求（使用者圖夠分）→ 不補。
+  # 一旦 assign 的溢位路徑種了前幾張，這裡才接手補滿到 100。
+  [ "$total" -eq 0 ] && return 0
   [ "$total" -ge 100 ] && return 0
   ( _pc_gen_images "$dir" 100 ) </dev/null >/dev/null 2>&1 &
   return 0
@@ -402,13 +445,36 @@ pc_cap_allows_key() {
   pc_with_lock cap _pc_cap_check "$cap" "$new_key"
 }
 
+_pc_least_used() {
+  # $1=assignments.tsv 路徑；stdin=候選清單（依優先序）。
+  # 取「目前被佔用次數最少」的一張，同次數時取清單較前者 → stdout "cnt<TAB>path"。
+  # 不能用「行數 % 總數」的盲循環：座位釋放（CLI 死亡清除）後行數會回退，
+  # 新 CLI 的 index 會撞上仍在使用中的圖 → 兩個 CLI 同一張（v1.4.2 實際故障）。
+  # 最少使用法保證：CLI 數 ≤ 圖數時人人不同張；超過時均勻循環重複。
+  local af="$1"
+  local pick="" best_count=-1 img cnt pat
+  while IFS= read -r img; do
+    [ -n "$img" ] || continue
+    cnt=0
+    if [ -f "$af" ]; then
+      pat="$(pc_safe_grep_pattern "$img")"
+      cnt="$(grep -c -E "	${pat}\$" "$af" 2>/dev/null)" || cnt=0
+    fi
+    if [ "$best_count" -lt 0 ] || [ "$cnt" -lt "$best_count" ]; then
+      best_count="$cnt"; pick="$img"
+      [ "$cnt" = "0" ] && break   # 0 次已是最小，提前收工
+    fi
+  done
+  [ -n "$pick" ] && printf '%s	%s' "$best_count" "$pick"
+}
+
 pc_assign_image() {
-  # $1=assignment key（alert.sh 的 KEY；必唯一。歷史上曾用 term_pid，但視窗抓取
-  # 失敗時多 CLI 的 term_pid 同為 0 會共用一行 → 全部同一張圖）→ echo 圖片路徑。
-  # 優先序：
-  #   1. 既有 assignments.tsv 佔座（穩定）
-  #   2. 使用者素材夾 ALERT_IMAGE_DIR（按檔名循環）
-  #   3. 自動生成的 auto-images（state_dir 內；ALERT_DISABLE_AUTOGEN!=1 才用）
+  # $1=assignment key（alert.sh 給的是 sanitize 後的 session_id；無 session 時退回
+  # KEY。必唯一且跨事件穩定 —— 一個 session 永遠同一張圖）→ echo 圖片路徑。
+  # 優先序（v1.5.0）：
+  #   1. 既有 assignments.tsv 佔座（穩定綁定；圖檔消失才重配並清舊行）
+  #   2. 使用者圖：ALERT_IMAGE_DIR（外部、唯讀）+ state_dir/user-images（合併按檔名序）
+  #   3. 使用者圖全數被佔用（溢位）→ auto-images（ALERT_DISABLE_AUTOGEN!=1 才用）
   #   4. ALERT_LEGACY_IMAGE 舊單張
   #   5. ALERT_DEFAULT_IMAGE 內建預設
   #   6. 空字串
@@ -416,36 +482,44 @@ pc_assign_image() {
   _pc_assign() {
     local pid="$1"
     local af; af="$(pc_state_dir)/assignments.tsv"
+    local kpat; kpat="$(pc_safe_grep_pattern "$pid")"
     if [ -f "$af" ]; then
       local existing
-      existing="$(grep -E "^${pid}	" "$af" 2>/dev/null | head -n1 | cut -f2-)"
-      if [ -n "$existing" ] && [ -f "$existing" ]; then printf '%s' "$existing"; return 0; fi
+      existing="$(grep -E "^${kpat}	" "$af" 2>/dev/null | head -n1 | cut -f2-)"
+      if [ -n "$existing" ]; then
+        if [ -f "$existing" ]; then printf '%s' "$existing"; return 0; fi
+        # 佔座的圖檔已消失 → 先清掉此 key 的舊行再重配（一 key 一行，不疊行）。
+        # 不可呼叫 pc_release_assign：它會再搶同一把 assign 鎖（已被本函式持有）。
+        grep -v -E "^${kpat}	" "$af" > "$af.tmp" 2>/dev/null
+        mv -f "$af.tmp" "$af" 2>/dev/null
+      fi
     fi
-    local imgs; imgs="$(pc_list_images)"
-    if [ -z "$imgs" ] && [ "${ALERT_DISABLE_AUTOGEN:-0}" != "1" ]; then
-      pc_ensure_numbered_images
-      imgs="$(pc_list_auto_images)"
-    fi
-    if [ -n "$imgs" ]; then
-      # 取「目前被佔用次數最少」的第一張（按檔名序）。
-      # 不能用「行數 % 總數」的盲循環：座位釋放（CLI 死亡清除）後行數會回退，
-      # 新 CLI 的 index 會撞上仍在使用中的圖 → 兩個 CLI 同一張（v1.4.2 實際故障）。
-      # 最少使用法保證：CLI 數 ≤ 圖數時人人不同張；超過時均勻循環重複。
-      local pick="" best_count=-1 img cnt pat
-      while IFS= read -r img; do
-        [ -n "$img" ] || continue
-        cnt=0
-        if [ -f "$af" ]; then
-          pat="$(pc_safe_grep_pattern "$img")"
-          cnt="$(grep -c -E "	${pat}\$" "$af" 2>/dev/null)" || cnt=0
-        fi
-        if [ "$best_count" -lt 0 ] || [ "$cnt" -lt "$best_count" ]; then
-          best_count="$cnt"; pick="$img"
-          [ "$cnt" = "0" ] && break   # 0 次已是最小，提前收工
-        fi
-      done <<EOF
-$imgs
+    local user_imgs sel best_count=""
+    user_imgs="$(pc_list_images)"
+    sel=""
+    if [ -n "$user_imgs" ]; then
+      sel="$(_pc_least_used "$af" <<EOF
+$user_imgs
 EOF
+)"
+      best_count="${sel%%	*}"
+    fi
+    # 溢位判定：沒有使用者圖，或每張使用者圖都已被佔用 ≥1 次 → 動用 auto-images。
+    if { [ -z "$sel" ] || [ "$best_count" != "0" ]; } && [ "${ALERT_DISABLE_AUTOGEN:-0}" != "1" ]; then
+      pc_ensure_numbered_images
+      local auto_imgs; auto_imgs="$(pc_list_auto_images)"
+      if [ -n "$auto_imgs" ]; then
+        local combined="$user_imgs"
+        combined="${combined:+$combined
+}$auto_imgs"
+        sel="$(_pc_least_used "$af" <<EOF
+$combined
+EOF
+)"
+      fi
+    fi
+    if [ -n "$sel" ]; then
+      local pick="${sel#*	}"
       printf '%s	%s\n' "$pid" "$pick" >> "$af"
       printf '%s' "$pick"; return 0
     fi

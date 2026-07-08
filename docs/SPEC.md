@@ -1,12 +1,14 @@
-# alert-need-human — 設計與規格（v1.4.0）
+# alert-need-human — 設計與規格（v1.5.0）
 
 ## 規格目標（需求總表）
 
 1. 作為 Claude Code CLI 的 plugin：當 Claude Code 執行到**需要人為操作**的步驟時，跳出圖片提醒。
 2. **點圖片** → 回到（開啟/前景化）對應的 Claude Code CLI 畫面，圖片消失。
 3. 圖片顯示期間，**點該 CLI 或在該 CLI 輸入文字** → 該圖片關閉。
-4. 圖片可以有多張：使用者可自行放圖，**某個資料夾**（`~/.claude/alert-images/`）就是放置圖片的位置。
-5. 多個 CLI 同時觸發時，**依檔名排序**從資料夾取圖；**每個 CLI 對應一張固定的圖**；CLI 數量超過圖片數量時**循環重複**使用。
+4. 圖片可以有多張：使用者可自行放圖。放置位置有兩個（合併後統稱「使用者圖」）：
+   - `~/.claude/alert-need-human/user-images/`（**專屬使用者資料夾**，自動建立）
+   - `~/.claude/alert-images/`（外部素材夾，`ALERT_IMAGE_DIR` 可覆寫）
+5. 多個 CLI 同時觸發時，**使用者圖恆優先**（依檔名排序）；使用者圖全數被佔用後，**多出來的 CLI 才用 auto-images** 的自動編號圖。**每個 Claude Code session 綁定一張固定的圖**（配圖鍵 = session_id，不隨 term_pid、視窗或完成順序改變）。
 6. 圖片顯示在**螢幕右下角**；使用者**可指定顯示在第幾個螢幕**（`ALERT_MONITOR`，1-based）。
 7. 右下角同時可顯示 1~100 張、上限 100 張：**只服務前 100 個 CLI，之後的 CLI 不彈圖（後面不管）**；既有 CLI 的更新不受影響，舊圖關閉後空位釋出、新 CLI 才會再被服務。
 
@@ -35,7 +37,7 @@
 4. **最低顯示時間** — `MinVisibleMs`（1500ms）內絕不關，避免一瞬間白屏感。
 5. **同一 CLI 多次觸發** — 沿用同一個 key（term_pid 為主鍵），新 pending 覆寫舊的，不會堆積。
 6. **同時最多 100 張（先到先服務）** — 已有 `ALERT_MAX_POPUPS`（預設 100）個 pending 時，**新的 CLI 不再被服務**（producer 端 `alert.sh` 直接略過，不寫 pending、不佔圖）；既有 CLI 的更新照常放行。舊圖關閉後空位釋出，之後觸發的新 CLI 才會被服務。renderer 額外做一次顯示層的截斷保險（同樣保留 seq 最小的前 N 張）。
-7. **可選的圖片來源** — 使用者素材夾 `~/.claude/alert-images/`（按檔名排序循環使用）；空了就**自動生成** 001..100 編號圖到 `~/.claude/alert-need-human/auto-images/`，**不寫入**使用者素材夾。
+7. **可選的圖片來源（v1.5.0）** — 使用者圖 = `user-images/`（state 夾內專屬資料夾）+ `~/.claude/alert-images/`（外部素材夾），合併按檔名排序、**恆優先**；使用者圖全數被佔用（或沒有）時，溢位的 session 才用**自動生成**的 001..100 編號圖（`~/.claude/alert-need-human/auto-images/`）。autogen **不寫入**使用者資料夾；使用者誤丟進 `auto-images/` 的非編號圖檔會被自動搬到 `user-images/`（`pc_migrate_user_images`，assignments 內指向舊路徑的綁定同步改寫）。
 8. **安全邊界（嚴格遵守）** — 本 plugin 只寫入兩個位置：
    - dev 時：repo 自己
    - 執行時：`$(pc_state_dir)`（預設 `~/.claude/alert-need-human/`）
@@ -60,9 +62,12 @@
        │    C. 進場時 GetConsoleWindow（限 ConsoleWindowClass；ConPTY 的
        │       PseudoConsoleWindow 謊稱 visible，靠 class 排除）。
        │    全滅 → (0,0)：renderer 永不自動關，只能點圖關。
-       ├─ KEY 決策：term_pid → sanitized session_id → noctx-PID-SEQ（唯一性兜底）
+       ├─ KEY 決策（pending 檔名）：term_pid → sanitized session_id → noctx-PID-SEQ（唯一性兜底）
        ├─ pc_cap_allows_key：上限閘門（已滿 → 先 pc_cleanup_stale 清死 CLI 再試一次，仍滿才 exit）
-       ├─ pc_assign_image：穩定佔座（同一 term_pid 永遠對應同一張圖）
+       ├─ pc_migrate_user_images：誤放 auto-images 的使用者圖 → 搬到 user-images/
+       ├─ pc_assign_image ASSIGN_KEY：穩定佔座
+       │    ASSIGN_KEY = sanitized session_id（v1.5.0；同一 session 永遠同一張圖，
+       │    不隨 term_pid / 視窗 / 完成順序變）；無 session_id 才退回 KEY
        ├─ pc_atomic_write → pending/<KEY>.txt （realpath-validated 在 state_dir 內）
        │    ※ 產出優先：pending 寫入排在清孤兒之前——就算 hook 之後被 timeout 殺掉，圖已有得畫
        ├─ pc_cleanup_stale "$KEY"：家務（跳過剛寫的 KEY，防 ps 快照時差誤殺自己）
@@ -90,7 +95,7 @@ v1.4.1 起三層防禦：
 
 ```
 key=<sanitized KEY>          ← 主鍵；同時是檔名 base（檔名 = key）
-session_id=<原始 session id> ← 僅供觀測，不入檔名
+session_id=<原始 session id> ← 配圖鍵（sanitize 後）；cleanup 也用它釋放佔座。不入檔名
 image_path=<Windows 形式路徑> ← FromFile 開得了
 hwnd=<int64>                 ← CLI 視窗 handle；0 = 抓不到
 term_pid=<Windows pid>       ← 從 MSYS /proc/winpid 取得；0 = 未知或 macOS
@@ -137,20 +142,27 @@ else:                              → tick
 
 點圖（`PictureBox.Add_Click`）：直接 `Focus-Window(CliHwnd)` + `Remove-Item-Pending`，不等 tick；同時設 `ClickRequested=true` 作為安全網。
 
-## 圖片來源優先序
+## 圖片來源優先序（v1.5.0）
 
-1. `assignments.tsv` 內既有佔座（**KEY** 與圖檔路徑的穩定綁定；v1.4.4 起以 KEY 而非
-   term_pid 為鍵——視窗抓取失敗時多 CLI 的 term_pid 同為 0，會共用一行 → 全同一張圖）
-2. `ALERT_IMAGE_DIR` 內的支援格式（png/jpg/jpeg/gif/bmp；**最少使用優先**，同數取檔名序。
+1. `assignments.tsv` 內既有佔座（**session_id** 與圖檔路徑的穩定綁定。
+   歷史：v1.4.4 以前用 term_pid → 視窗抓取失敗時多 CLI 同為 0 共用一行；
+   v1.4.4~v1.4.6 用 KEY=term_pid → 同一 session 換視窗/抓取結果不同就換圖、tsv 疊行。
+   v1.5.0 起配圖鍵 = sanitized session_id：一個 session 永遠同一張圖。
+   佔座的圖檔消失 → 清掉該 key 舊行再重配，一 key 恆一行）
+2. **使用者圖**：`ALERT_IMAGE_DIR`（外部素材夾）+ `user-images/`（state 夾內專屬資料夾）
+   合併清單（png/jpg/jpeg/gif/bmp；**最少使用優先**，同數取檔名序。
    不用「行數 % 總數」盲循環：座位釋放後行數回退，新 CLI 會撞上使用中的圖）
-3. **自動生成的 `auto-images/`**（state_dir 內，001.png..100.png）— `ALERT_DISABLE_AUTOGEN=1` 時跳過
+3. **溢位 → 自動生成的 `auto-images/`**（state_dir 內，001.png..100.png）：
+   使用者圖不存在、或每張都已被佔用 ≥1 次時，才把 auto-images 併入候選
+   （使用者圖仍排在前；下一輪循環還是先回到使用者圖）— `ALERT_DISABLE_AUTOGEN=1` 時跳過
 4. `ALERT_LEGACY_IMAGE`（舊單張，預設 `~/.claude/alert-image.png`）
 5. `ALERT_DEFAULT_IMAGE`（plugin 內建）
 6. 全無 → 空字串 → renderer 畫「載入失敗」黃底紅框提示（永不白屏）
 
 ## 自動生成編號圖
 
-當 `pc_list_images` 回傳空時，第一張 alert 觸發時呼叫 `pc_ensure_numbered_images`：
+當配圖需要動用 auto-images（使用者圖不存在、或全數已被佔用的溢位時刻，v1.5.0），
+`pc_assign_image` 呼叫 `pc_ensure_numbered_images`：
 
 - Windows：`scripts/lib/gen-auto-images.ps1`，單一 PowerShell 行程內用 `System.Drawing` 生成 320×320 PNG（每張不同色相 + 大字數字）。
 - macOS / Linux：`scripts/lib/gen_auto_images.py`，優先 Pillow；無 Pillow 時退回 Tkinter PhotoImage 寫 GIF。
@@ -163,7 +175,8 @@ hook 被殺 = pending 沒寫 = 首次安裝後永遠不彈（v1.4.4 實際故障
 - **同步種子段**：只生前 `ALERT_AUTOGEN_SEED` 張（預設 8，約 1~4 秒），當下夠分即可；
   `pc_with_lock autogen` 串行化。
 - **背景補齊段**：`alert.sh` 寫完 pending 後於**頂層**呼叫 `pc_topup_auto_images_async`，
-  detach 一支行程補齊到 100，不佔 hook 預算。種子與補齊因 per-PID tmp + 已存在即跳過，
+  detach 一支行程補齊到 100，不佔 hook 預算。v1.5.0 起補齊條件 = auto-images 已有
+  種子（>0 張且 <100 張）；種子數 0 表示至今沒有溢位需求（使用者圖夠分），不補。種子與補齊因 per-PID tmp + 已存在即跳過，
   並行安全。**注意**：補齊不可在 `IMAGE="$(pc_assign_image ...)"` 的命令替換內 spawn ——
   背景子行程會繼承命令替換的管線寫端，呼叫端會等到補齊做完才返回，省時全數泡湯。
 - 測試/舊行為可設 `ALERT_AUTOGEN_SEED=100`（全同步、無背景段）。
@@ -203,8 +216,9 @@ PictureBox 的 Image 必須「先摘下（設 null）再 Dispose」。在還掛�
 | --- | --- | --- | --- |
 | repo 自己 | dev/install | dev only | runtime 不會寫 |
 | `$(pc_state_dir)` (`~/.claude/alert-need-human/` 預設) | ✅ | ✅ | `pc_atomic_write` 會 realpath-validate 拒絕 escape |
-| `$(pc_state_dir)/auto-images/` | ✅ | ✅ | 唯一寫圖片的位置 |
-| `$(pc_image_dir)` (`~/.claude/alert-images/` 預設) | ✅ | ❌ | 使用者素材，本 plugin 視為唯讀 |
+| `$(pc_state_dir)/auto-images/` | ✅ | ✅ | autogen 寫圖的位置；誤放的使用者圖會被搬出 |
+| `$(pc_state_dir)/user-images/` | ✅ | ✅ | 使用者專屬資料夾（plugin 只建立資料夾與接收遷移檔，不改不刪使用者放的圖） |
+| `$(pc_image_dir)` (`~/.claude/alert-images/` 預設) | ✅ | ❌ | 外部使用者素材夾，本 plugin 視為唯讀 |
 | 登錄檔 / PATH / 開機啟動 / Scheduled Task / 全域 Hook | — | ❌ | 完全不動 |
 
 防禦機制：
@@ -228,8 +242,8 @@ PictureBox 的 Image 必須「先摘下（設 null）再 Dispose」。在還掛�
 
 | 變數 | 預設 | 用途 |
 | --- | --- | --- |
-| `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | 狀態資料夾（測試覆寫用） |
-| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 使用者素材夾 |
+| `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | 狀態資料夾（測試覆寫用）；`user-images/` 專屬使用者資料夾在其內 |
+| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 外部使用者素材夾（唯讀） |
 | `ALERT_DEFAULT_IMAGE` | `<plugin>/assets/default-alert.png` | 後備預設圖 |
 | `ALERT_LEGACY_IMAGE` | `~/.claude/alert-image.png` | 舊單張（向後相容） |
 | `ALERT_MAX_POPUPS` | 100 | 同時可見上限（先到先服務；滿了之後的新 CLI 不服務） |
@@ -250,4 +264,6 @@ PictureBox 的 Image 必須「先摘下（設 null）再 Dispose」。在還掛�
 | `test-cap.sh` | cap 滿時新 key 被拒、同 key update 放行、ALERT_MAX_POPUPS 覆寫、regex-injection 防護 |
 | `test-autogen.sh` | 自動生成 100 張、idempotent、ALERT_IMAGE_DIR 唯讀（不被寫入） |
 | `test-image-dir-override.sh` | ALERT_IMAGE_DIR 設定 / 空 / 不存在 的優先序行為 |
+| `test-user-priority.sh` | user-images 專屬資料夾、使用者圖優先 / auto 只補溢位、誤放遷移、tsv 改寫 |
+| `test-session-binding.sh` | 端到端：同 session 跨 term_pid / 事件 / 順序永遠同一張圖 |
 | `test-grid.ps1` / `.py` | 網格數學跨平台一致 |

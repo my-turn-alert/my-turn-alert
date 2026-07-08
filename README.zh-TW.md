@@ -8,7 +8,7 @@
 
 *Visual popup alerts when any Claude Code CLI needs a human. Click the image to jump back to that CLI.*
 
-[![Version](https://img.shields.io/badge/version-1.4.6-blue)](./.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue)](./.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#平台支援)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
@@ -36,9 +36,9 @@
 | 🔔 | **該你了就彈圖** | 回應結束、API 錯誤、權限請求、閒置等待——涵蓋所有「輪到人」的時機 |
 | 🖱️ | **點圖即切回** | 點任一張圖,對應的 CLI 視窗立刻前景化,該圖消失(其他圖不受影響) |
 | 🧠 | **回去就自動關** | 以視窗 handle 精準比對:你切回那個 CLI,它的圖就自動關掉 |
-| 🗂️ | **多 CLI 各一張圖** | 同時跑 N 個 Claude Code,每個 CLI 固定分配一張獨立圖片,一眼認出是誰在叫你 |
+| 🗂️ | **一 session 一張圖** | 同時跑 N 個 Claude Code,每個 session 永久綁定一張獨立圖片,一眼認出是誰在叫你 |
 | 📐 | **自適應網格** | 1~3 張一排、4 張 2×2、更多自動換行縮放;永不裁切、不超出螢幕 |
-| 🖼️ | **零設定自訂圖** | 把圖丟進 `~/.claude/alert-images/` 即生效;空著也會自動生成 100 張編號圖 |
+| 🖼️ | **零設定自訂圖** | 把圖丟進 `user-images/` 即生效且**恆優先**;不夠分時才用自動生成的編號圖補位 |
 | 🔇 | **不吵你** | 彈窗不搶焦點、不打斷打字;同一 CLI 重複觸發只覆寫不堆疊;關掉後 ~2 分鐘內的事件回音不重彈 |
 | 🛡️ | **安全邊界明確** | 只讀寫自己的狀態資料夾;不碰登錄檔、PATH、開機啟動、全域鍵盤 Hook([詳見安全章節](#%EF%B8%8F-安全邊界)) |
 | 💨 | **不拖慢 Claude** | hook 數百毫秒內返回;長駐 renderer 背景繪圖,全部圖關完自動退出 |
@@ -96,22 +96,26 @@
 
 ## 🖼️ 自訂圖片
 
-**零設定,放圖即生效**——把你的圖片(建議 PNG)丟進:
+**零設定,放圖即生效**——把你的圖片(建議 PNG)丟進**使用者專屬資料夾**:
 
 | 系統 | 路徑 |
 | --- | --- |
-| Windows | `%USERPROFILE%\.claude\alert-images\` |
-| macOS | `~/.claude/alert-images/` |
+| Windows | `%USERPROFILE%\.claude\alert-need-human\user-images\` |
+| macOS | `~/.claude/alert-need-human/user-images/` |
 
-放幾張就顯示幾張;每個 CLI 按檔名順序(不分大小寫)依序佔座,之後固定用同一張。圖不夠分時循環重複。
+(首次觸發時自動建立;`~/.claude/alert-images/` 也同樣有效,兩處合併使用。)
+
+**你的圖永遠優先**(v1.5.0):每個 Claude Code session 按檔名順序(不分大小寫)佔一張你的圖並**永久綁定**——同一個 session 從頭到尾都是同一張圖,不隨視窗或完成順序改變。你的圖全部被佔用後,**多出來的 session 才會用自動生成的編號圖**補位;下一輪循環仍然先回到你的圖。
 
 **圖片來源優先順序**(由高到低,逐級退路):
 
-1. **`~/.claude/alert-images/` 內有圖** → 多圖模式,每個 CLI 分配一張
-2. **空了 → 自動生成 001..100 編號圖**(寫到 `~/.claude/alert-need-human/auto-images/`,**不動你的素材夾**;`ALERT_DISABLE_AUTOGEN=1` 可關)
+1. **使用者圖**(`user-images/` + `~/.claude/alert-images/` 合併)→ 每個 session 綁定一張
+2. **使用者圖用完(或沒有)→ 自動生成 001..100 編號圖**(寫到 `~/.claude/alert-need-human/auto-images/`,**不動你的圖**;`ALERT_DISABLE_AUTOGEN=1` 可關)
 3. 舊單張 `~/.claude/alert-image.png` 存在 → 所有 CLI 共用這張(向後相容)
 4. 以上皆無 → 內建預設圖 `assets/default-alert.png`
 5. 連內建圖都找不到 → renderer 畫黃底紅框「載入失敗」提示(**永不白屏**)
+
+> 💡 如果你曾把自己的圖誤丟進 `auto-images/`,不用搬:下次觸發時 plugin 會自動把非編號圖檔遷移到 `user-images/`,既有綁定不會斷。
 
 > 💡 圖片格式建議 **PNG**:macOS 的 Tkinter 只吃 PNG / GIF;Windows 支援 PNG / JPG / GIF / BMP。跨平台一致就統一用 PNG。
 
@@ -150,7 +154,7 @@
 | 變數 | 預設 | 用途 |
 | --- | --- | --- |
 | `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | 狀態夾(測試/沙箱用) |
-| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 使用者素材夾 |
+| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 外部使用者素材夾(與 `user-images/` 合併,唯讀) |
 | `ALERT_MAX_POPUPS` | `100` | 同時可見上限(先到先服務;滿了之後的新 CLI 不彈圖) |
 | `ALERT_MONITOR` | 自動 | 指定顯示在第 N 個螢幕(1-based);未設或超界時用最新 alert 的 CLI 所在螢幕 |
 | `ALERT_CELL_MAX` | `320` | 單張彈圖的尺寸上限(px);想要大圖可調高 |
@@ -215,8 +219,9 @@
 ├── pending/<key>.txt     ← 一個待顯示 alert(以終端機 pid 為主鍵)
 ├── renderer.pid          ← 長駐 renderer 的 PID(單一實例)
 ├── renderer.lock         ← 啟動互斥鎖
-├── assignments.tsv       ← key → 圖片路徑 的佔座記錄(穩定綁定)
-├── auto-images/          ← 自動生成的編號圖(不動使用者素材夾)
+├── assignments.tsv       ← session_id → 圖片路徑 的佔座記錄(永久綁定)
+├── user-images/          ← 你的圖片放這裡(優先使用)
+├── auto-images/          ← 自動生成的編號圖(只補溢位)
 └── seq                   ← 全域遞增序號(決定網格排列先後)
 ```
 
@@ -250,8 +255,8 @@ my-turn-alert/
 
 | 位置 | 讀 | 寫 | 用途 |
 | --- | --- | --- | --- |
-| `~/.claude/alert-need-human/`(state) | ✅ | ✅ | pending、佔座、序號、renderer.pid、各 .lock、auto-images/ |
-| `~/.claude/alert-images/`(使用者素材) | ✅ | ❌ | 你放的圖片,本 plugin 視為唯讀 |
+| `~/.claude/alert-need-human/`(state) | ✅ | ✅ | pending、佔座、序號、renderer.pid、各 .lock、user-images/、auto-images/ |
+| `~/.claude/alert-images/`(外部使用者素材) | ✅ | ❌ | 你放的圖片,本 plugin 視為唯讀 |
 | plugin 安裝目錄 | ✅(讀腳本) | ❌(runtime) | 只在 install/update 時被 Claude Code 寫 |
 
 **不會碰**:登錄檔、PATH、`~/.bashrc`/`~/.zshrc`/profile.ps1、開機啟動、Scheduled Task、Windows 服務、全域鍵盤/滑鼠 Hook(`SetWindowsHookEx` 一律不用;`GetLastInputInfo` 是被動讀取 API)、其他使用者目錄。

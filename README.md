@@ -8,7 +8,7 @@
 
 *Visual popup alerts when any Claude Code CLI needs a human. Click the image to jump back to that CLI.*
 
-[![Version](https://img.shields.io/badge/version-1.4.6-blue)](./.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue)](./.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#platform-support)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
@@ -36,9 +36,9 @@ It listens to Claude Code's **Stop / StopFailure / Notification** events. Whenev
 | 🔔 | **Popup when it's your turn** | Response finished, API error, permission request, idle waiting — covers every "human's turn" moment |
 | 🖱️ | **Click to jump back** | Click any image and the matching CLI window comes to the foreground; that image closes (others stay) |
 | 🧠 | **Auto-dismiss on return** | Precise window-handle matching: switch back to that CLI and its popup closes by itself |
-| 🗂️ | **One image per CLI** | Run N Claude Codes at once — each CLI gets its own fixed image, so you can tell at a glance who's calling |
+| 🗂️ | **One image per session** | Run N Claude Codes at once — each session is permanently bound to its own image, so you can tell at a glance who's calling |
 | 📐 | **Adaptive grid** | 1–3 in a row, 4 as 2×2, more wrap and scale automatically; never cropped, never off-screen |
-| 🖼️ | **Zero-config custom images** | Drop images into `~/.claude/alert-images/` and they just work; if empty, 100 numbered images are auto-generated |
+| 🖼️ | **Zero-config custom images** | Drop images into `user-images/` and they just work — **always used first**; auto-generated numbered images only fill the overflow |
 | 🔇 | **Never interrupts you** | Popups don't steal focus or break your typing; repeated triggers from the same CLI overwrite instead of stacking; event echoes within ~2 minutes of dismissal don't re-pop |
 | 🛡️ | **Clear security boundary** | Only reads/writes its own state folder; never touches the registry, PATH, startup entries, or global keyboard hooks ([see Security](#%EF%B8%8F-security-boundary)) |
 | 💨 | **Doesn't slow Claude down** | Hooks return within a few hundred milliseconds; a long-lived renderer draws in the background and exits once all popups are closed |
@@ -96,22 +96,26 @@ These settings live in [`hooks/hooks.json`](./hooks/hooks.json); edit it to chan
 
 ## 🖼️ Custom Images
 
-**Zero configuration — drop images in and they work.** Put your images (PNG recommended) into:
+**Zero configuration — drop images in and they work.** Put your images (PNG recommended) into the **dedicated user folder**:
 
 | OS | Path |
 | --- | --- |
-| Windows | `%USERPROFILE%\.claude\alert-images\` |
-| macOS | `~/.claude/alert-images/` |
+| Windows | `%USERPROFILE%\.claude\alert-need-human\user-images\` |
+| macOS | `~/.claude/alert-need-human/user-images/` |
 
-As many images as you drop in get used; each CLI claims a seat in filename order (case-insensitive) and keeps the same image afterwards. When there are more CLIs than images, images cycle.
+(Created automatically on first trigger; `~/.claude/alert-images/` also works — both folders are merged.)
+
+**Your images always come first** (v1.5.0): each Claude Code session claims one of your images in filename order (case-insensitive) and is **permanently bound** to it — the same session keeps the same image regardless of windows or completion order. Only after all your images are taken do **overflow sessions fall back to auto-generated numbered images**; the next cycle returns to your images first.
 
 **Image source priority** (highest to lowest, each level a fallback):
 
-1. **Images exist in `~/.claude/alert-images/`** → multi-image mode, one image per CLI
-2. **Empty → 100 numbered images (001..100) are auto-generated** (written to `~/.claude/alert-need-human/auto-images/`, **your asset folder is never touched**; disable with `ALERT_DISABLE_AUTOGEN=1`)
+1. **User images** (`user-images/` + `~/.claude/alert-images/` merged) → one image bound per session
+2. **User images all taken (or none) → auto-generated numbered images 001..100** (written to `~/.claude/alert-need-human/auto-images/`, **your images are never touched**; disable with `ALERT_DISABLE_AUTOGEN=1`)
 3. Legacy single image `~/.claude/alert-image.png` exists → all CLIs share it (backward compatible)
 4. None of the above → built-in default image `assets/default-alert.png`
 5. Even the built-in image is missing → the renderer draws a yellow "load failed" placeholder with a red border (**never a blank window**)
+
+> 💡 If you previously dropped your own images into `auto-images/`, no need to move them: on the next trigger the plugin automatically migrates non-numbered image files to `user-images/`, keeping existing bindings intact.
 
 > 💡 **PNG recommended**: Tkinter on macOS only accepts PNG / GIF; Windows supports PNG / JPG / GIF / BMP. Use PNG for cross-platform consistency.
 
@@ -150,7 +154,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | State folder (for tests/sandboxing) |
-| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | User asset folder |
+| `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | External user asset folder (merged with `user-images/`; read-only) |
 | `ALERT_MAX_POPUPS` | `100` | Max popups visible at once (first come, first served; new CLIs wait once full) |
 | `ALERT_MONITOR` | auto | Pin popups to monitor N (1-based); unset or out-of-range uses the most recent alert's CLI screen |
 | `ALERT_CELL_MAX` | `320` | Max size (px) of a single popup image; raise it if you want bigger images |
@@ -215,8 +219,9 @@ The popup starts in the background; `alert.sh` returns within a few hundred mill
 ├── pending/<key>.txt     ← one pending alert (keyed by terminal pid)
 ├── renderer.pid          ← PID of the long-lived renderer (single instance)
 ├── renderer.lock         ← startup mutex
-├── assignments.tsv       ← key → image-path seat assignments (stable binding)
-├── auto-images/          ← auto-generated numbered images (user asset folder untouched)
+├── assignments.tsv       ← session_id → image-path seat assignments (permanent binding)
+├── user-images/          ← your images go here (always used first)
+├── auto-images/          ← auto-generated numbered images (overflow only)
 └── seq                   ← global monotonic sequence (determines grid ordering)
 ```
 
@@ -250,8 +255,8 @@ This plugin strictly reads/writes only the locations below; **it never touches a
 
 | Location | Read | Write | Purpose |
 | --- | --- | --- | --- |
-| `~/.claude/alert-need-human/` (state) | ✅ | ✅ | pending, seat assignments, sequence, renderer.pid, locks, auto-images/ |
-| `~/.claude/alert-images/` (user assets) | ✅ | ❌ | Your images — treated as read-only by this plugin |
+| `~/.claude/alert-need-human/` (state) | ✅ | ✅ | pending, seat assignments, sequence, renderer.pid, locks, user-images/, auto-images/ |
+| `~/.claude/alert-images/` (external user assets) | ✅ | ❌ | Your images — treated as read-only by this plugin |
 | Plugin install directory | ✅ (scripts) | ❌ (runtime) | Only written by Claude Code during install/update |
 
 **Never touched**: registry, PATH, `~/.bashrc`/`~/.zshrc`/profile.ps1, startup entries, Scheduled Tasks, Windows services, global keyboard/mouse hooks (`SetWindowsHookEx` is never used; `GetLastInputInfo` is a passive read-only API), other users' directories.

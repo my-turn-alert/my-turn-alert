@@ -5,13 +5,13 @@
     "name": "benC96"
   },
   "description": "Claude Code 提醒彈窗 plugin 的安裝來源。",
-  "version": "1.4.6",
+  "version": "1.5.0",
   "plugins": [
     {
       "name": "my-turn-alert",
       "source": "./",
       "description": "多個 Claude Code 同時跑時,每個結束/卡住的 CLI 在螢幕角落彈出一張對應圖片(自適應網格);點圖即切回該 CLI。支援 Windows 與 macOS。",
-      "version": "1.4.6",
+      "version": "1.5.0",
       "author": {
         "name": "benC96"
       }
