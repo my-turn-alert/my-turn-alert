@@ -30,24 +30,30 @@ SCRIPTS_DIR="$PLUGIN_ROOT/scripts"
 # 讓退路找得到內建預設圖
 export ALERT_DEFAULT_IMAGE="${ALERT_DEFAULT_IMAGE:-$PLUGIN_ROOT/assets/default-alert.png}"
 
-# --- 從 JSON 取欄位（無 jq：抓 "key":"value"，順便砍掉值內的 CR/LF/NUL） ---
-json_str() {
-  printf '%s' "$STDIN_JSON" \
-    | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
-    | head -n1 \
-    | tr -d '\000\r\n'
+# --- 從 JSON 取欄位（無 jq：抓 "key":"value"，順便砍掉值內的 CR/LF；NUL 進不了
+#     bash 變數）。純 bash regex + 結果放 _JV 變數：不可用 sed|head|tr 管線，
+#     也不可用 $(json_str ...) 指令替換 —— 管線每欄位 3 個 fork、指令替換再加
+#     1 個 subshell fork；MSYS 高負載時每個 fork ~0.3s，是 v1.5.1 hook 超時
+#     故障的成因之一。 ---
+json_str_v() {
+  _JV=""
+  if [[ $STDIN_JSON =~ \"$1\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    _JV="${BASH_REMATCH[1]}"
+    _JV="${_JV//$'\r'/}"
+    _JV="${_JV//$'\n'/}"
+  fi
 }
 
-SESSION_ID="$(json_str session_id)"
-CWD="$(json_str cwd)"; [ -z "$CWD" ] && CWD="$PWD"
-EVENT="$(json_str hook_event_name)"
+json_str_v session_id;      SESSION_ID="$_JV"
+json_str_v cwd;             CWD="$_JV"; [ -z "$CWD" ] && CWD="$PWD"
+json_str_v hook_event_name; EVENT="$_JV"
 
 # 事件 → reason
 case "$EVENT" in
   Stop) REASON=stop ;;
   StopFailure) REASON=stop_failure ;;
   Notification)
-    MSG="$(json_str message | tr 'A-Z' 'a-z')"
+    json_str_v message; MSG="${_JV,,}"   # bash 小寫展開，省一個 tr fork
     case "$MSG" in
       *permission*) REASON=permission ;;
       *idle*|*waiting*) REASON=idle ;;
@@ -60,20 +66,23 @@ esac
 # --- 抓本 CLI 視窗 hwnd 與 term_pid ---
 WINLINE="${ALERT_FAKE_WINLINE:-}"
 if [ -z "$WINLINE" ]; then
-  case "$(uname -s)" in
+  case "$_PC_UNAME" in
     MINGW*|MSYS*|CYGWIN*)
       PS=powershell; command -v powershell.exe >/dev/null 2>&1 && PS=powershell.exe
       PS_GET="$SCRIPTS_DIR/get-window.ps1"
       command -v cygpath >/dev/null 2>&1 && PS_GET="$(cygpath -w "$PS_GET")"
       # 沿 MSYS /proc 祖先鏈收集多個候選 winpid（hook 的 bash $$ 是 MSYS pid；
       # Win32 ParentProcessId 常指向已結束的 forker → 一定要走 /proc）
+      # read 是 builtin：比 $(cat ...) 每步省 2 個 fork（×8 層祖先鏈很可觀）
       _cands=""
       _cur="$$"
       _i=0
       while [ "$_i" -lt 8 ] && [ -n "$_cur" ] && [ "$_cur" != "0" ] && [ "$_cur" != "1" ]; do
-        _wp="$(cat "/proc/$_cur/winpid" 2>/dev/null)"
+        # read 對「無結尾換行」的檔案會回非 0 但值已讀到 → 不可在 || 分支清空
+        _wp=""; { IFS= read -r _wp < "/proc/$_cur/winpid"; } 2>/dev/null || :
         [ -n "$_wp" ] && _cands="${_cands:+$_cands,}$_wp"
-        _ppid="$(cat "/proc/$_cur/ppid" 2>/dev/null)"
+        _ppid=""; { IFS= read -r _ppid < "/proc/$_cur/ppid"; } 2>/dev/null || :
+        [ -z "$_ppid" ] && break
         [ "$_ppid" = "$_cur" ] && break
         _cur="$_ppid"
         _i=$((_i + 1))
@@ -84,21 +93,25 @@ if [ -z "$WINLINE" ]; then
       _TO=""
       command -v timeout >/dev/null 2>&1 && _TO="timeout ${ALERT_WINCAP_TIMEOUT:-6}"
       if [ -n "$_cands" ]; then
-        WINLINE="$($_TO "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PS_GET" -Pids "$_cands" 2>/dev/null | tr -d '\r' || true)"
+        WINLINE="$($_TO "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PS_GET" -Pids "$_cands" 2>/dev/null || true)"
       else
-        WINLINE="$($_TO "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PS_GET" -FromPid "$$" 2>/dev/null | tr -d '\r' || true)"
+        WINLINE="$($_TO "$PS" -NoProfile -ExecutionPolicy Bypass -File "$PS_GET" -FromPid "$$" 2>/dev/null || true)"
       fi
+      WINLINE="${WINLINE//$'\r'/}"   # 去 CR 用 bash 展開，省一個 tr fork
       [ -z "$WINLINE" ] && WINLINE="0	0"
       ;;
     Darwin) WINLINE=$'0\t0' ;;
     *) WINLINE=$'0\t0' ;;
   esac
 fi
-HWND="$(printf '%s' "$WINLINE" | cut -f1)"; [ -z "$HWND" ] && HWND=0
-TERM_PID="$(printf '%s' "$WINLINE" | cut -f2)"; [ -z "$TERM_PID" ] && TERM_PID=0
+# TAB 切欄用 bash 參數展開（不 fork cut）；WINLINE 格式固定 "hwnd<TAB>pid"
+HWND="${WINLINE%%$'\t'*}"; [ -z "$HWND" ] && HWND=0
+TERM_PID="${WINLINE#*$'\t'}"; TERM_PID="${TERM_PID%%$'\t'*}"
+[ "$TERM_PID" = "$WINLINE" ] && TERM_PID=0   # 無 TAB → 沒有第二欄
+[ -z "$TERM_PID" ] && TERM_PID=0
 
 # --- 決定主鍵：term_pid → session_id（sanitize 後）→ noctx-pid-seq（保證唯一）---
-SESSION_KEY="$(pc_sanitize_key "$SESSION_ID")"
+pc_sanitize_key_v "$SESSION_ID"; SESSION_KEY="$_PC_KEY"
 if [ "$TERM_PID" != "0" ]; then
   KEY="$TERM_PID"
 elif [ -n "$SESSION_KEY" ]; then
@@ -106,14 +119,15 @@ elif [ -n "$SESSION_KEY" ]; then
 else
   KEY="noctx-$$-$(pc_next_seq)"
 fi
-KEY="$(pc_sanitize_key "$KEY")"
+pc_sanitize_key_v "$KEY"; KEY="$_PC_KEY"
 [ -z "$KEY" ] && KEY="noctx-$$"   # 過 sanitize 後仍空 → 兜底
 
 # --- 幽靈重現抑制：使用者剛關掉這個 CLI 的圖（點圖/回 CLI）後，Claude Code 常在
 #     ~60 秒時對同一個 Stop 再補發一個 idle_prompt。那不是新事件，只是舊事件的回音。
 #     renderer 關圖時會寫 acked-<KEY>.stamp；idle 事件若戳記夠新 → 略過不重彈。
 #     非 idle 的新事件（stop/permission/...）代表真的有新狀況 → 清戳記、照常彈。 ---
-ACK_STAMP="$(pc_state_dir)/acked-${KEY}.stamp"
+_pc_state_dir_v
+ACK_STAMP="$_PC_SD/acked-${KEY}.stamp"
 if [ "$REASON" = "idle" ] && [ -f "$ACK_STAMP" ]; then
   _ack_mt="$(_pc_lock_mtime "$ACK_STAMP")"
   _now="$(date +%s)"
@@ -142,15 +156,16 @@ pc_migrate_user_images
 ASSIGN_KEY="$SESSION_KEY"
 [ -z "$ASSIGN_KEY" ] && ASSIGN_KEY="$KEY"
 IMAGE="$(pc_assign_image "$ASSIGN_KEY")"
-SEQ="$(pc_next_seq)"
+pc_next_seq_v; SEQ="$_PC_SEQ"
 
 # 防白屏 Layer 1：先用 POSIX 形式驗證圖檔【實際存在】，壞路徑退回內建 default；
-# 再轉成 Windows 形式（不依賴 cygpath，缺席時純 bash fallback）。
-IMAGE="$(pc_resolve_image "$IMAGE")"
-IMAGE="$(pc_to_win_path "$IMAGE")"
+# 再轉成 Windows 形式（純 bash，不依賴 cygpath）。
+pc_resolve_image_v "$IMAGE"
+pc_to_win_path_v "$_PC_IMG"; IMAGE="$_PC_WPATH"
 
 # --- 寫 pending（最優先產出：就算之後任何步驟被 timeout 殺掉，圖已經有得畫）---
-STATE_DIR="$(pc_state_dir)"
+_pc_state_dir_v
+STATE_DIR="$_PC_SD"
 PENDING="$STATE_DIR/pending/${KEY}.txt"
 pc_atomic_write "$PENDING" "key=${KEY}
 session_id=${SESSION_ID}
@@ -175,10 +190,10 @@ pc_cleanup_stale "$KEY"
 _ensure_renderer() {
   local pidf="$STATE_DIR/renderer.pid"
   if [ -f "$pidf" ]; then
-    local rp; rp="$(cat "$pidf" 2>/dev/null)"
+    local rp=""; { IFS= read -r rp < "$pidf"; } 2>/dev/null || :
     pc_is_alive "$rp" && return 0
   fi
-  case "$(uname -s)" in
+  case "$_PC_UNAME" in
     Darwin)
       bash "$SCRIPTS_DIR/show-popup.sh" >/dev/null 2>&1 &
       ;;
