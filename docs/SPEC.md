@@ -140,6 +140,15 @@ else:                              → tick
 
 `(int32)` 強制 signed 比較，正確處理 32-bit DWORD wrap（~49.7 天）。
 
+**取「現在時刻」一律走 `Get-NowTick`，不可直接 `[uint32][Environment]::TickCount`**：
+`[Environment]::TickCount` 是 signed int32，開機 24.9 天後為負值，而 PowerShell 的
+`[uint32]` 轉型是範圍檢查（InvalidCast）而非位元重解讀 → 每個 tick 都丟例外、
+`Sync-Pending` 在 Layout 前炸掉且被 catch 吞掉 → 表單以預設大小停在 (0,0)，
+呈現「左上角白色方塊」（v1.5.2 實際故障：uptime 28 天的機器）。`Get-NowTick`
+先 `-band 0xFFFFFFFF` 取低 32 位再轉 uint32，值與 Win32 `GetTickCount` 一致。
+tick 差值計算走 `Get-TickAge`（long 域減法 + 補 2^32），同理不可用
+`[int32]($a - $b)`——PowerShell 減法先升格 long，差超出 int32 範圍時同樣 InvalidCast。
+
 點圖（`PictureBox.Add_Click`）：直接 `Focus-Window(CliHwnd)` + `Remove-Item-Pending`，不等 tick；同時設 `ClickRequested=true` 作為安全網。
 
 ## 圖片來源優先序（v1.5.0）

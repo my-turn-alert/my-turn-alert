@@ -139,10 +139,22 @@ Should ($src -match 'InTick') "Tick-Once has re-entrancy guard"
 
 # Case 10：點圖即時關閉的關鍵不變式 —— Compute-Close 在 ClickRequested 時無視一切立即 close
 $stClick = @{
-  CliHwnd = 0; TermPid = 0; FirstShownTick = [uint32]([Environment]::TickCount)
+  CliHwnd = 0; TermPid = 0; FirstShownTick = (Get-NowTick)
   StartedInCli = $true; BaselineLastInput = [uint32]9999; ReturnHits = 0; ClickRequested = $true
 }
-Should ((Compute-Close $stClick $false ([uint32]([Environment]::TickCount)) ([uint32]9999)) -eq 'close') "click closes immediately even within MinVisibleMs"
+Should ((Compute-Close $stClick $false (Get-NowTick) ([uint32]9999)) -eq 'close') "click closes immediately even within MinVisibleMs"
+
+# Case 11（回歸，v1.5.2 實際故障）：[Environment]::TickCount 是 signed int32，
+# 開機 24.9 天後為負；直接 [uint32] 轉型會 InvalidCast → 每個 tick 都炸 →
+# 表單永遠不 Layout，停在左上角白色方塊。Get-NowTick 必須對負值也能回傳 uint32。
+$tickOk = $true
+try { $null = Get-NowTick } catch { $tickOk = $false }
+Should $tickOk "Get-NowTick never throws (survives negative TickCount after 24.9d uptime)"
+Should ((Get-NowTick) -is [uint32]) "Get-NowTick returns uint32"
+# 原始碼層級防呆：除了 Get-NowTick 本體與 Write-Dbg 的原樣記錄外，
+# 不得再有任何 [uint32][Environment]::TickCount 直接轉型。
+$src2 = Get-Content -Raw (Join-Path $here '..\scripts\show-popup.ps1')
+Should (-not ($src2 -match '\[uint32\]\[Environment\]::TickCount')) "no bare [uint32][Environment]::TickCount casts remain"
 
 if ($fail -eq 0) {
   Write-Host "close-state: PASS"

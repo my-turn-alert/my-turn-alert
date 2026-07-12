@@ -191,6 +191,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
 | Can't switch to the right tab on macOS | Known limitation — can only bring the terminal app to the front |
 | Want to turn it off temporarily | `/plugin disable my-turn-alert@my-turn-alert` |
 | Used to pop, gradually stopped | Orphan-lock issue before v1.4.0; v1.4.1+ self-heals by breaking stale locks. Manual fix: delete the `*.lock` directories under `~/.claude/alert-need-human/` |
+| Only a white box at the top-left corner, no image | Bug before v1.5.2: after 24.9 days of Windows uptime, an integer-cast overflow in the renderer's internal timing made every tick fail, so the grid never rendered. Upgrade to v1.5.2+ (no reboot needed) |
 | Popup interrupts your typing | Shouldn't happen (popups never steal focus); if it still does, please open an issue with your terminal type and environment |
 
 ## 🧩 How It Works

@@ -127,6 +127,25 @@ public class NoActivateHook : NativeWindow {
 }
 '@ -ReferencedAssemblies System.Windows.Forms
 
+function Get-NowTick {
+  # [Environment]::TickCount 是 signed int32，開機 24.9 天後變負值；PowerShell 的
+  # [uint32] 轉型是範圍檢查而非位元重解讀 → 對負值直接丟 InvalidCast。這會讓
+  # Sync-Pending 在 Layout 之前炸掉、被 Add_Load 的 catch 吞掉 → 表單以預設大小
+  # 停在 (0,0)：左上角白色方塊（實際故障：uptime 28 天的機器）。
+  # 先 -band 取低 32 位（恆非負）再轉 uint32，值與 Win32 GetTickCount 一致。
+  return [uint32]([Environment]::TickCount -band 0xFFFFFFFFL)
+}
+
+function Get-TickAge([uint32]$now, [uint32]$then) {
+  # 兩個 uint32 tick 的差（now - then），正確跨 DWORD wrap，回傳 [0, 2^32) 的 long。
+  # 不可用 [int32]($now - $then)：PowerShell 的減法先升格 long，差超出 int32 範圍
+  # （例如 then=0、now=24.6 億——開機 28 天的初值場景）時 [int32] 轉型直接丟
+  # InvalidCast，跟 Get-NowTick 修掉的是同一類炸法。
+  $d = [long]$now - [long]$then
+  if ($d -lt 0) { $d += 0x100000000L }
+  return $d
+}
+
 function Get-LastInputTick {
   $info = New-Object Fg+LASTINPUTINFO
   $info.cbSize = [uint32][System.Runtime.InteropServices.Marshal]::SizeOf([type]([Fg+LASTINPUTINFO]))
@@ -439,7 +458,7 @@ function Init-KeyState([string]$k, [hashtable]$item, [uint32]$nowTick, [uint32]$
 function Compute-Close([hashtable]$st, [bool]$fgIsCli, [uint32]$nowTick, [uint32]$lastInput) {
   # 回傳：'close'（該關）、'tick'（繼續）；ReturnHits 由呼叫端維護。
   if ($st.ClickRequested) { return 'close' }
-  if (([int32]($nowTick - $st.FirstShownTick)) -lt $MinVisibleMs) { return 'tick' }
+  if ((Get-TickAge $nowTick $st.FirstShownTick) -lt $MinVisibleMs) { return 'tick' }
   if (-not $fgIsCli) {
     $st.ReturnHits = 0
     return 'tick'
@@ -464,8 +483,8 @@ function Sync-Pending {
   $latest = Read-Pending
   # 自癒：term_pid 已死 → 刪 pending。每 ~2 秒掃一次即可（Get-Process 雖快，
   # 但沒必要每 100ms 對每張圖都查），避免無謂負載。
-  $nowSweep = [uint32][Environment]::TickCount
-  if (([int32]($nowSweep - $script:LastLiveSweep)) -ge $LiveSweepMs) {
+  $nowSweep = Get-NowTick
+  if ((Get-TickAge $nowSweep $script:LastLiveSweep) -ge $LiveSweepMs) {
     $script:LastLiveSweep = $nowSweep
     foreach ($k in @($latest.Keys)) {
       $tp = $latest[$k].TermPid
@@ -500,7 +519,7 @@ function Sync-Pending {
   }
   $script:Items = $latest
 
-  $now = [uint32][Environment]::TickCount
+  $now = Get-NowTick
   $lastInput = Get-LastInputTick
   foreach ($k in @($latest.Keys)) {
     if (-not $script:KeyState.ContainsKey($k)) {
@@ -530,7 +549,7 @@ function Tick-Once {
   if ($script:InTick) { return }
   $script:InTick = $true
   try {
-    $now = [uint32][Environment]::TickCount
+    $now = Get-NowTick
     $lastInput = Get-LastInputTick
     $closeKeys = New-Object System.Collections.ArrayList
     foreach ($k in @($script:Items.Keys)) {
