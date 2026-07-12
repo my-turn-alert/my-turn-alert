@@ -8,7 +8,7 @@
 
 *Visual popup alerts when any Claude Code CLI needs a human. Click the image to jump back to that CLI.*
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue)](./.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue)](./.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#platform-support)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
@@ -100,8 +100,8 @@ These settings live in [`hooks/hooks.json`](./hooks/hooks.json); edit it to chan
 
 | OS | Path |
 | --- | --- |
-| Windows | `%USERPROFILE%\.claude\alert-need-human\user-images\` |
-| macOS | `~/.claude/alert-need-human/user-images/` |
+| Windows | `%USERPROFILE%\.claude\my-turn-alert\user-images\` |
+| macOS | `~/.claude/my-turn-alert/user-images/` |
 
 (Created automatically on first trigger; `~/.claude/alert-images/` also works — both folders are merged.)
 
@@ -110,7 +110,7 @@ These settings live in [`hooks/hooks.json`](./hooks/hooks.json); edit it to chan
 **Image source priority** (highest to lowest, each level a fallback):
 
 1. **User images** (`user-images/` + `~/.claude/alert-images/` merged) → one image bound per session
-2. **User images all taken (or none) → auto-generated numbered images 001..100** (written to `~/.claude/alert-need-human/auto-images/`, **your images are never touched**; disable with `ALERT_DISABLE_AUTOGEN=1`)
+2. **User images all taken (or none) → auto-generated numbered images 001..100** (written to `~/.claude/my-turn-alert/auto-images/`, **your images are never touched**; disable with `ALERT_DISABLE_AUTOGEN=1`)
 3. Legacy single image `~/.claude/alert-image.png` exists → all CLIs share it (backward compatible)
 4. None of the above → built-in default image `assets/default-alert.png`
 5. Even the built-in image is missing → the renderer draws a yellow "load failed" placeholder with a red border (**never a blank window**)
@@ -153,7 +153,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | State folder (for tests/sandboxing) |
+| `ALERT_STATE_DIR` | `~/.claude/my-turn-alert` | State folder (for tests/sandboxing) |
 | `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | External user asset folder (merged with `user-images/`; read-only) |
 | `ALERT_MAX_POPUPS` | `100` | Max popups visible at once (first come, first served; new CLIs wait once full) |
 | `ALERT_MONITOR` | auto | Pin popups to monitor N (1-based); unset or out-of-range uses the most recent alert's CLI screen |
@@ -174,7 +174,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
    powershell -ExecutionPolicy Bypass -File "path-to-scripts/scripts/probe-window.ps1"
    ```
    ("path-to-scripts" = the plugin install directory, usually under `~/.claude/plugins/...`)
-2. The probe dumps the terminal process tree and window info to `~/.claude/alert-need-human/probe.txt`.
+2. The probe dumps the terminal process tree and window info to `~/.claude/my-turn-alert/probe.txt`.
 3. Open that file, find your terminal's process name (e.g. `Tabby.exe` / `Hyper.exe` / `Cmder.exe`), and add it to the `$termNames` array at the top of `scripts/get-window.ps1`.
 4. The next popup will switch correctly.
 
@@ -190,7 +190,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
 | Click switches to the wrong CLI | Run `probe-window.ps1` once (see section above) and add your terminal's process name to the list |
 | Can't switch to the right tab on macOS | Known limitation — can only bring the terminal app to the front |
 | Want to turn it off temporarily | `/plugin disable my-turn-alert@my-turn-alert` |
-| Used to pop, gradually stopped | Orphan-lock issue before v1.4.0; v1.4.1+ self-heals by breaking stale locks. Manual fix: delete the `*.lock` directories under `~/.claude/alert-need-human/` |
+| Used to pop, gradually stopped | Orphan-lock issue before v1.4.0; v1.4.1+ self-heals by breaking stale locks. Manual fix: delete the `*.lock` directories under `~/.claude/my-turn-alert/` |
 | Only a white box at the top-left corner, no image | Bug before v1.5.2: after 24.9 days of Windows uptime, an integer-cast overflow in the renderer's internal timing made every tick fail, so the grid never rendered. Upgrade to v1.5.2+ (no reboot needed) |
 | Popup interrupts your typing | Shouldn't happen (popups never steal focus); if it still does, please open an issue with your terminal type and environment |
 
@@ -203,7 +203,7 @@ Event (Stop / StopFailure / Notification: permission|idle|elicitation)
             ├─ reads stdin JSON (session_id, cwd)
             ├─ captures this CLI's terminal window handle + terminal pid
             ├─ assigns this CLI an image via the "seat-claiming" rule
-            ├─ writes ~/.claude/alert-need-human/pending/<key>.txt
+            ├─ writes ~/.claude/my-turn-alert/pending/<key>.txt
             └─ grabs renderer.lock → starts renderer in background if not running → releases lock
                  └─ long-lived renderer (Windows: PowerShell+WinForms / macOS: Python+Tkinter)
                       ├─ polls pending/: added → join grid & re-layout; removed → drop & re-layout; empty → exit
@@ -213,10 +213,10 @@ Event (Stop / StopFailure / Notification: permission|idle|elicitation)
 
 The popup starts in the background; `alert.sh` returns within a few hundred milliseconds and **never blocks Claude's** next step.
 
-**State folder** `~/.claude/alert-need-human/` (shared across sessions; never inside project directories):
+**State folder** `~/.claude/my-turn-alert/` (shared across sessions; never inside project directories):
 
 ```
-~/.claude/alert-need-human/
+~/.claude/my-turn-alert/
 ├── pending/<key>.txt     ← one pending alert (keyed by terminal pid)
 ├── renderer.pid          ← PID of the long-lived renderer (single instance)
 ├── renderer.lock         ← startup mutex
@@ -256,7 +256,7 @@ This plugin strictly reads/writes only the locations below; **it never touches a
 
 | Location | Read | Write | Purpose |
 | --- | --- | --- | --- |
-| `~/.claude/alert-need-human/` (state) | ✅ | ✅ | pending, seat assignments, sequence, renderer.pid, locks, user-images/, auto-images/ |
+| `~/.claude/my-turn-alert/` (state) | ✅ | ✅ | pending, seat assignments, sequence, renderer.pid, locks, user-images/, auto-images/ |
 | `~/.claude/alert-images/` (external user assets) | ✅ | ❌ | Your images — treated as read-only by this plugin |
 | Plugin install directory | ✅ (scripts) | ❌ (runtime) | Only written by Claude Code during install/update |
 

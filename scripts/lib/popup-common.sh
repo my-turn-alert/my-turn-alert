@@ -23,11 +23,50 @@ esac
 
 _pc_state_dir_v() {
   # 設定 _PC_SD=state dir（零 fork）。mkdir 只在該目錄尚未備妥時付一次。
-  _PC_SD="${ALERT_STATE_DIR:-$HOME/.claude/alert-need-human}"
+  _PC_SD="${ALERT_STATE_DIR:-$HOME/.claude/my-turn-alert}"
   if [ "$_PC_SD" != "${_PC_SD_READY:-}" ]; then
+    if [ ! -d "$_PC_SD" ]; then
+      _pc_migrate_legacy_state
+    fi
     [ -d "$_PC_SD/pending" ] || mkdir -p "$_PC_SD/pending" 2>/dev/null
     _PC_SD_READY="$_PC_SD"
   fi
+}
+
+_pc_migrate_legacy_state() {
+  # v1.6.0 一次性遷移：state 夾由 ~/.claude/alert-need-human 改名為
+  # ~/.claude/my-turn-alert（跟上 v1.5.0 的套件改名）。整夾 mv 保留佔座、
+  # ack 戳記、auto-images 等，再改寫 assignments.tsv 內指向舊夾的圖片路徑，
+  # 讓 user-images 綁定不失效。
+  # 安全邊界：預設舊夾只在「ALERT_STATE_DIR 未覆寫」時才視為遷移來源——
+  # 測試沙箱自訂 ALERT_STATE_DIR 時絕不可搬動使用者的真實舊夾
+  # （沙箱要測遷移須明確設 ALERT_LEGACY_STATE_DIR）。
+  local legacy="${ALERT_LEGACY_STATE_DIR:-}"
+  if [ -z "$legacy" ] && [ -z "${ALERT_STATE_DIR:-}" ]; then
+    legacy="$HOME/.claude/alert-need-human"
+  fi
+  [ -n "$legacy" ] && [ -d "$legacy" ] || return 0
+  # 併發防護：多個 CLI 的 hook 可能同時冷啟動。鎖必須放在 state 夾【外】
+  # （target 夾一旦先被 mkdir，mv 會把舊夾巢狀搬進去）；搶不到鎖的等對方
+  # 遷移完成後重新檢查，等滿放棄（外層 mkdir -p 兜底，只損失舊綁定）。
+  local lock="${_PC_SD%/*}/.migrate-my-turn-alert.lock" i=0
+  until mkdir "$lock" 2>/dev/null; do
+    i=$((i+1)); [ "$i" -ge 20 ] && return 0
+    sleep 0.1
+  done
+  if [ ! -d "$_PC_SD" ] && [ -d "$legacy" ]; then
+    # renderer.pid 不能帶過去：舊 renderer 盯著舊路徑，pending 消失會自我結束；
+    # pid 檔若搬過去，新 alert.sh 會誤判 renderer 已在跑而不啟動新的（圖不彈）。
+    rm -f "$legacy/renderer.pid" 2>/dev/null
+    if mv "$legacy" "$_PC_SD" 2>/dev/null && [ -f "$_PC_SD/assignments.tsv" ]; then
+      local out="" line
+      while IFS= read -r line || [ -n "$line" ]; do
+        out="${out}${line//"$legacy"/"$_PC_SD"}"$'\n'
+      done < "$_PC_SD/assignments.tsv"
+      printf '%s' "$out" > "$_PC_SD/assignments.tsv"
+    fi
+  fi
+  rmdir "$lock" 2>/dev/null
 }
 
 pc_state_dir() {

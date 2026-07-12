@@ -8,7 +8,7 @@
 
 *Visual popup alerts when any Claude Code CLI needs a human. Click the image to jump back to that CLI.*
 
-[![Version](https://img.shields.io/badge/version-1.5.1-blue)](./.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue)](./.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#平台支援)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](https://code.claude.com/docs/en/plugins)
@@ -100,8 +100,8 @@
 
 | 系統 | 路徑 |
 | --- | --- |
-| Windows | `%USERPROFILE%\.claude\alert-need-human\user-images\` |
-| macOS | `~/.claude/alert-need-human/user-images/` |
+| Windows | `%USERPROFILE%\.claude\my-turn-alert\user-images\` |
+| macOS | `~/.claude/my-turn-alert/user-images/` |
 
 (首次觸發時自動建立;`~/.claude/alert-images/` 也同樣有效,兩處合併使用。)
 
@@ -110,7 +110,7 @@
 **圖片來源優先順序**(由高到低,逐級退路):
 
 1. **使用者圖**(`user-images/` + `~/.claude/alert-images/` 合併)→ 每個 session 綁定一張
-2. **使用者圖用完(或沒有)→ 自動生成 001..100 編號圖**(寫到 `~/.claude/alert-need-human/auto-images/`,**不動你的圖**;`ALERT_DISABLE_AUTOGEN=1` 可關)
+2. **使用者圖用完(或沒有)→ 自動生成 001..100 編號圖**(寫到 `~/.claude/my-turn-alert/auto-images/`,**不動你的圖**;`ALERT_DISABLE_AUTOGEN=1` 可關)
 3. 舊單張 `~/.claude/alert-image.png` 存在 → 所有 CLI 共用這張(向後相容)
 4. 以上皆無 → 內建預設圖 `assets/default-alert.png`
 5. 連內建圖都找不到 → renderer 畫黃底紅框「載入失敗」提示(**永不白屏**)
@@ -153,7 +153,7 @@
 
 | 變數 | 預設 | 用途 |
 | --- | --- | --- |
-| `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | 狀態夾(測試/沙箱用) |
+| `ALERT_STATE_DIR` | `~/.claude/my-turn-alert` | 狀態夾(測試/沙箱用) |
 | `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 外部使用者素材夾(與 `user-images/` 合併,唯讀) |
 | `ALERT_MAX_POPUPS` | `100` | 同時可見上限(先到先服務;滿了之後的新 CLI 不彈圖) |
 | `ALERT_MONITOR` | 自動 | 指定顯示在第 N 個螢幕(1-based);未設或超界時用最新 alert 的 CLI 所在螢幕 |
@@ -174,7 +174,7 @@
    powershell -ExecutionPolicy Bypass -File "腳本路徑/scripts/probe-window.ps1"
    ```
    (「腳本路徑」= plugin 安裝目錄,通常在 `~/.claude/plugins/...`)
-2. 探針會將終端機程序樹與視窗資訊 dump 至 `~/.claude/alert-need-human/probe.txt`。
+2. 探針會將終端機程序樹與視窗資訊 dump 至 `~/.claude/my-turn-alert/probe.txt`。
 3. 打開該檔,找到你的終端機程序名(例如 `Tabby.exe` / `Hyper.exe` / `Cmder.exe`),加進 `scripts/get-window.ps1` 頂端的 `$termNames` 陣列。
 4. 下次彈窗就能正確切換了。
 
@@ -190,7 +190,7 @@
 | 點圖沒切到對的 CLI | 跑一次 `probe-window.ps1`(見上方章節),把你的終端機程序名加進清單 |
 | macOS 切不到正確分頁 | 已知限制,僅能把終端機 App 叫到前面 |
 | 想暫時關掉 | `/plugin disable my-turn-alert@my-turn-alert` |
-| 之前會彈、後來漸漸不彈了 | v1.4.0 以前的孤兒鎖問題;v1.4.1 起自動破鎖自癒。手動急救:刪 `~/.claude/alert-need-human/` 下的 `*.lock` 目錄 |
+| 之前會彈、後來漸漸不彈了 | v1.4.0 以前的孤兒鎖問題;v1.4.1 起自動破鎖自癒。手動急救:刪 `~/.claude/my-turn-alert/` 下的 `*.lock` 目錄 |
 | 只在螢幕左上角出現白色方塊,沒有圖 | v1.5.1 以前的 bug:Windows 開機超過 24.9 天後,renderer 內部計時轉型溢位,每個 tick 都出錯、圖排不出來。升級 v1.5.2+ 即修復(不必重開機) |
 | 彈窗跳出時打字被打斷 | 不應該發生(彈窗不搶焦點);若仍中斷,請開 issue 回報終端機類型與環境 |
 
@@ -203,7 +203,7 @@
             ├─ 讀 stdin JSON(取 session_id、cwd)
             ├─ 抓本 CLI 終端機視窗 handle + 終端機 pid
             ├─ 依「佔座規則」決定本 CLI 配哪張圖
-            ├─ 寫 ~/.claude/alert-need-human/pending/<key>.txt
+            ├─ 寫 ~/.claude/my-turn-alert/pending/<key>.txt
             └─ 搶 renderer.lock → 若 renderer 未跑則背景啟動 → 釋放鎖
                  └─ 長駐 renderer(Windows: PowerShell+WinForms / macOS: Python+Tkinter)
                       ├─ 輪詢 pending/:新增→加入網格重排;刪除→移除重排;空→自我結束
@@ -213,10 +213,10 @@
 
 彈窗以背景方式啟動,`alert.sh` 數百毫秒內返回,**不會卡住 Claude** 的下一步。
 
-**狀態資料夾** `~/.claude/alert-need-human/`(跨 session 共享;不放專案目錄內):
+**狀態資料夾** `~/.claude/my-turn-alert/`(跨 session 共享;不放專案目錄內):
 
 ```
-~/.claude/alert-need-human/
+~/.claude/my-turn-alert/
 ├── pending/<key>.txt     ← 一個待顯示 alert(以終端機 pid 為主鍵)
 ├── renderer.pid          ← 長駐 renderer 的 PID(單一實例)
 ├── renderer.lock         ← 啟動互斥鎖
@@ -256,7 +256,7 @@ my-turn-alert/
 
 | 位置 | 讀 | 寫 | 用途 |
 | --- | --- | --- | --- |
-| `~/.claude/alert-need-human/`(state) | ✅ | ✅ | pending、佔座、序號、renderer.pid、各 .lock、user-images/、auto-images/ |
+| `~/.claude/my-turn-alert/`(state) | ✅ | ✅ | pending、佔座、序號、renderer.pid、各 .lock、user-images/、auto-images/ |
 | `~/.claude/alert-images/`(外部使用者素材) | ✅ | ❌ | 你放的圖片,本 plugin 視為唯讀 |
 | plugin 安裝目錄 | ✅(讀腳本) | ❌(runtime) | 只在 install/update 時被 Claude Code 寫 |
 

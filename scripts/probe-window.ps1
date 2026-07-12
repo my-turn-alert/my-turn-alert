@@ -17,7 +17,7 @@ public class P {
 
 $termNames = @('windowsterminal','wt','powershell','pwsh','cmd','conhost','code','alacritty','wezterm')
 
-$stateDir = Join-Path $env:USERPROFILE '.claude\alert-need-human'
+$stateDir = Join-Path $env:USERPROFILE '.claude\my-turn-alert'
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 $out = Join-Path $stateDir 'probe.txt'
 

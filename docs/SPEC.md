@@ -1,4 +1,20 @@
-# alert-need-human — 設計與規格（v1.5.0）
+# my-turn-alert — 設計與規格（v1.6.0）
+
+## state 夾改名與一次性遷移（v1.6.0）
+
+state 夾預設路徑由 `~/.claude/alert-need-human/` 改為 `~/.claude/my-turn-alert/`，
+跟上 v1.5.0 的套件改名（新使用者看到的名字只剩一個）。
+
+首次以新版執行時 `_pc_state_dir_v` 做一次性遷移（`_pc_migrate_legacy_state`）：
+
+- 新夾不存在且舊夾存在 → 整夾 `mv`（保留佔座、ack 戳記、user-images、auto-images），
+  再把 `assignments.tsv` 內指向舊夾的圖片路徑改寫為新夾，session 綁定不失效。
+- `renderer.pid` 刻意**不**帶過去：舊 renderer 盯著舊路徑（pending 消失會自我結束），
+  pid 檔若搬過去，新 alert.sh 會誤判 renderer 已在跑而不啟動新的 → 圖不彈。
+- 併發防護：遷移鎖放在 state 夾**外**（`.migrate-my-turn-alert.lock`，state 夾本身
+  就是被搬的對象）；搶不到鎖的 hook 等對方完成後重新檢查。
+- 測試沙箱安全：`ALERT_STATE_DIR` 有覆寫時**絕不**隱式遷移真實舊夾；
+  沙箱要測遷移須明確設 `ALERT_LEGACY_STATE_DIR`。
 
 ## 規格目標（需求總表）
 
@@ -6,7 +22,7 @@
 2. **點圖片** → 回到（開啟/前景化）對應的 Claude Code CLI 畫面，圖片消失。
 3. 圖片顯示期間，**點該 CLI 或在該 CLI 輸入文字** → 該圖片關閉。
 4. 圖片可以有多張：使用者可自行放圖。放置位置有兩個（合併後統稱「使用者圖」）：
-   - `~/.claude/alert-need-human/user-images/`（**專屬使用者資料夾**，自動建立）
+   - `~/.claude/my-turn-alert/user-images/`（**專屬使用者資料夾**，自動建立）
    - `~/.claude/alert-images/`（外部素材夾，`ALERT_IMAGE_DIR` 可覆寫）
 5. 多個 CLI 同時觸發時，**使用者圖恆優先**（依檔名排序）；使用者圖全數被佔用後，**多出來的 CLI 才用 auto-images** 的自動編號圖。**每個 Claude Code session 綁定一張固定的圖**（配圖鍵 = session_id，不隨 term_pid、視窗或完成順序改變）。
 6. 圖片顯示在**螢幕右下角**；使用者**可指定顯示在第幾個螢幕**（`ALERT_MONITOR`，1-based）。
@@ -37,10 +53,10 @@
 4. **最低顯示時間** — `MinVisibleMs`（1500ms）內絕不關，避免一瞬間白屏感。
 5. **同一 CLI 多次觸發** — 沿用同一個 key（term_pid 為主鍵），新 pending 覆寫舊的，不會堆積。
 6. **同時最多 100 張（先到先服務）** — 已有 `ALERT_MAX_POPUPS`（預設 100）個 pending 時，**新的 CLI 不再被服務**（producer 端 `alert.sh` 直接略過，不寫 pending、不佔圖）；既有 CLI 的更新照常放行。舊圖關閉後空位釋出，之後觸發的新 CLI 才會被服務。renderer 額外做一次顯示層的截斷保險（同樣保留 seq 最小的前 N 張）。
-7. **可選的圖片來源（v1.5.0）** — 使用者圖 = `user-images/`（state 夾內專屬資料夾）+ `~/.claude/alert-images/`（外部素材夾），合併按檔名排序、**恆優先**；使用者圖全數被佔用（或沒有）時，溢位的 session 才用**自動生成**的 001..100 編號圖（`~/.claude/alert-need-human/auto-images/`）。autogen **不寫入**使用者資料夾；使用者誤丟進 `auto-images/` 的非編號圖檔會被自動搬到 `user-images/`（`pc_migrate_user_images`，assignments 內指向舊路徑的綁定同步改寫）。
+7. **可選的圖片來源（v1.5.0）** — 使用者圖 = `user-images/`（state 夾內專屬資料夾）+ `~/.claude/alert-images/`（外部素材夾），合併按檔名排序、**恆優先**；使用者圖全數被佔用（或沒有）時，溢位的 session 才用**自動生成**的 001..100 編號圖（`~/.claude/my-turn-alert/auto-images/`）。autogen **不寫入**使用者資料夾；使用者誤丟進 `auto-images/` 的非編號圖檔會被自動搬到 `user-images/`（`pc_migrate_user_images`，assignments 內指向舊路徑的綁定同步改寫）。
 8. **安全邊界（嚴格遵守）** — 本 plugin 只寫入兩個位置：
    - dev 時：repo 自己
-   - 執行時：`$(pc_state_dir)`（預設 `~/.claude/alert-need-human/`）
+   - 執行時：`$(pc_state_dir)`（預設 `~/.claude/my-turn-alert/`）
    - 使用者素材夾 `~/.claude/alert-images/` **只讀**，自動生成寫到 state 夾。
    - 完全不動：登錄檔、PATH、開機啟動、排程任務、系統服務、全域 Hook、其他使用者檔案。
 
@@ -224,7 +240,7 @@ PictureBox 的 Image 必須「先摘下（設 null）再 Dispose」。在還掛�
 | 路徑 | 讀 | 寫 | 註 |
 | --- | --- | --- | --- |
 | repo 自己 | dev/install | dev only | runtime 不會寫 |
-| `$(pc_state_dir)` (`~/.claude/alert-need-human/` 預設) | ✅ | ✅ | `pc_atomic_write` 會 realpath-validate 拒絕 escape |
+| `$(pc_state_dir)` (`~/.claude/my-turn-alert/` 預設) | ✅ | ✅ | `pc_atomic_write` 會 realpath-validate 拒絕 escape |
 | `$(pc_state_dir)/auto-images/` | ✅ | ✅ | autogen 寫圖的位置；誤放的使用者圖會被搬出 |
 | `$(pc_state_dir)/user-images/` | ✅ | ✅ | 使用者專屬資料夾（plugin 只建立資料夾與接收遷移檔，不改不刪使用者放的圖） |
 | `$(pc_image_dir)` (`~/.claude/alert-images/` 預設) | ✅ | ❌ | 外部使用者素材夾，本 plugin 視為唯讀 |
@@ -251,7 +267,7 @@ PictureBox 的 Image 必須「先摘下（設 null）再 Dispose」。在還掛�
 
 | 變數 | 預設 | 用途 |
 | --- | --- | --- |
-| `ALERT_STATE_DIR` | `~/.claude/alert-need-human` | 狀態資料夾（測試覆寫用）；`user-images/` 專屬使用者資料夾在其內 |
+| `ALERT_STATE_DIR` | `~/.claude/my-turn-alert` | 狀態資料夾（測試覆寫用）；`user-images/` 專屬使用者資料夾在其內 |
 | `ALERT_IMAGE_DIR` | `~/.claude/alert-images` | 外部使用者素材夾（唯讀） |
 | `ALERT_DEFAULT_IMAGE` | `<plugin>/assets/default-alert.png` | 後備預設圖 |
 | `ALERT_LEGACY_IMAGE` | `~/.claude/alert-image.png` | 舊單張（向後相容） |

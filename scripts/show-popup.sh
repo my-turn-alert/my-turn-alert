@@ -16,7 +16,8 @@
 #   * 從 pending 讀的 key 一律經白名單（^[A-Za-z0-9_.-]{1,128}$）。
 #   * 渲染上限 100 張（producer 端 alert.sh 也擋一次）。
 
-STATE_DIR="${ALERT_STATE_DIR:-$HOME/.claude/alert-need-human}"
+# state 夾預設 my-turn-alert（v1.6.0 改名）；舊夾遷移由 alert.sh 做，這裡不重複。
+STATE_DIR="${ALERT_STATE_DIR:-$HOME/.claude/my-turn-alert}"
 PENDING_DIR="$STATE_DIR/pending"
 mkdir -p "$PENDING_DIR"
 PID_FILE="$STATE_DIR/renderer.pid"

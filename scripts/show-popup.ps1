@@ -34,7 +34,9 @@ $ErrorActionPreference = 'Stop'
 # 共用 grid 數學
 . "$PSScriptRoot/lib/grid.ps1"
 
-$StateDir = if ($env:ALERT_STATE_DIR) { $env:ALERT_STATE_DIR } else { Join-Path $env:USERPROFILE '.claude\alert-need-human' }
+# state 夾預設 my-turn-alert（v1.6.0 改名）。舊夾 alert-need-human 的一次性遷移
+# 由 alert.sh（renderer 的唯一啟動者）在 _pc_state_dir_v 內完成，這裡不重複做。
+$StateDir = if ($env:ALERT_STATE_DIR) { $env:ALERT_STATE_DIR } else { Join-Path $env:USERPROFILE '.claude\my-turn-alert' }
 $PendingDir = Join-Path $StateDir 'pending'
 New-Item -ItemType Directory -Force -Path $PendingDir | Out-Null
 $PidFile = Join-Path $StateDir 'renderer.pid'

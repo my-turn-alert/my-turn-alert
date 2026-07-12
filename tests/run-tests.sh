@@ -4,6 +4,7 @@ set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 rc=0
 echo "== bash: test-popup-common =="; bash "$HERE/test-popup-common.sh" || rc=1
+echo "== bash: test-migrate =="; [ -f "$HERE/test-migrate.sh" ] && { bash "$HERE/test-migrate.sh" || rc=1; }
 echo "== bash: test-assign =="; [ -f "$HERE/test-assign.sh" ] && { bash "$HERE/test-assign.sh" || rc=1; }
 echo "== bash: test-alert =="; [ -f "$HERE/test-alert.sh" ] && { bash "$HERE/test-alert.sh" || rc=1; }
 echo "== bash: test-pathfix =="; [ -f "$HERE/test-pathfix.sh" ] && { bash "$HERE/test-pathfix.sh" || rc=1; }
