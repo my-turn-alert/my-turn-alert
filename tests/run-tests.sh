@@ -14,6 +14,7 @@ echo "== bash: test-autogen =="; [ -f "$HERE/test-autogen.sh" ] && { bash "$HERE
 echo "== bash: test-image-dir-override =="; [ -f "$HERE/test-image-dir-override.sh" ] && { bash "$HERE/test-image-dir-override.sh" || rc=1; }
 echo "== bash: test-user-priority =="; [ -f "$HERE/test-user-priority.sh" ] && { bash "$HERE/test-user-priority.sh" || rc=1; }
 echo "== bash: test-session-binding =="; [ -f "$HERE/test-session-binding.sh" ] && { bash "$HERE/test-session-binding.sh" || rc=1; }
+echo "== bash: test-assign-gc =="; [ -f "$HERE/test-assign-gc.sh" ] && { bash "$HERE/test-assign-gc.sh" || rc=1; }
 echo "== bash: test-assign-perf =="; [ -f "$HERE/test-assign-perf.sh" ] && { bash "$HERE/test-assign-perf.sh" || rc=1; }
 echo "== bash: test-alert-perf =="; [ -f "$HERE/test-alert-perf.sh" ] && { bash "$HERE/test-alert-perf.sh" || rc=1; }
 echo "== bash: test-getwindow =="; [ -f "$HERE/test-getwindow.sh" ] && { bash "$HERE/test-getwindow.sh" || rc=1; }

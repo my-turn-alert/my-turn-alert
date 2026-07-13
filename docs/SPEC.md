@@ -1,4 +1,25 @@
-# my-turn-alert — 設計與規格（v1.6.0）
+# my-turn-alert — 設計與規格（v1.7.0）
+
+## 佔座回收（v1.7.0）
+
+`assignments.tsv` 行格式擴為 `key<TAB>path<TAB>last_used`（epoch 秒）。v1.6.x 以前
+綁定行只增不減：點掉彈窗後 pending 消失，該 session 的佔座永遠留在 tsv ——
+`pc_cleanup_stale` 只清「pending 還在且 term_pid 已死」的行。長期下來使用者圖
+全被幽靈綁定佔滿，每個新 session 都被推去 auto-images 拿新編號
+（實際故障：重裝後「image 從 004 開始算」，user-images 有空圖卻不用）。
+
+- **續期**：配圖命中既有綁定（fast path）→ 改寫該行 last_used = now；
+  舊 2 欄行順便升級成 3 欄。節流：戳記齡 <600 秒不重寫（省 fork；TTL 相對誤差可忽略）。
+- **回收**（`_pc_gc_assignments`，只在「要配新圖」的 slow path 跑，持 assign 鎖）：
+  一行活著 = key 出現在活的 pending（sanitized session_id 或檔名 base），
+  **或** last_used 齡 ≤ `ALERT_ASSIGN_TTL_SECS`（預設 86400 = 24h）。
+  其餘（含無戳記的舊 2 欄行）= 幽靈 → 整行回收，使用者圖釋出。
+- **舊 2 欄行的相容語意**：該 session 自己回來（fast path）仍拿原圖並升級 3 欄；
+  但別的 session 配新圖時它不佔座（一次 GC 後消失）。升級 v1.7.0 後既有的
+  幽靈行自然被清光。一次性遷移代價：活著的舊 session 若在自己下一次事件前
+  先被別人的 GC 清行，會重新配圖（可能換一張）——僅發生在升級當下一次。
+- 「同 session 永遠同一張圖」不變式不受影響：TTL 內綁定穩定；
+  超過 TTL 的 session 早已結束（Claude Code session 沒有 24h 無事件還活著的型態）。
 
 ## state 夾改名與一次性遷移（v1.6.0）
 
@@ -173,7 +194,8 @@ tick 差值計算走 `Get-TickAge`（long 域減法 + 補 2^32），同理不可
    歷史：v1.4.4 以前用 term_pid → 視窗抓取失敗時多 CLI 同為 0 共用一行；
    v1.4.4~v1.4.6 用 KEY=term_pid → 同一 session 換視窗/抓取結果不同就換圖、tsv 疊行。
    v1.5.0 起配圖鍵 = sanitized session_id：一個 session 永遠同一張圖。
-   佔座的圖檔消失 → 清掉該 key 舊行再重配，一 key 恆一行）
+   佔座的圖檔消失 → 清掉該 key 舊行再重配，一 key 恆一行。
+   v1.7.0 起行尾多 last_used 欄：命中續期、配新圖前回收死綁定——見「佔座回收」）
 2. **使用者圖**：`ALERT_IMAGE_DIR`（外部素材夾）+ `user-images/`（state 夾內專屬資料夾）
    合併清單（png/jpg/jpeg/gif/bmp；**最少使用優先**，同數取檔名序。
    不用「行數 % 總數」盲循環：座位釋放後行數回退，新 CLI 會撞上使用中的圖）
@@ -273,6 +295,7 @@ PictureBox 的 Image 必須「先摘下（設 null）再 Dispose」。在還掛�
 | `ALERT_LEGACY_IMAGE` | `~/.claude/alert-image.png` | 舊單張（向後相容） |
 | `ALERT_MAX_POPUPS` | 100 | 同時可見上限（先到先服務；滿了之後的新 CLI 不服務） |
 | `ALERT_MONITOR` | —（自動） | 指定顯示在第 N 個螢幕（1-based，Windows）；未設或超界時用「最新 alert 的 CLI 所在螢幕」。macOS renderer（tkinter）只認主螢幕，此變數無效 |
+| `ALERT_ASSIGN_TTL_SECS` | 86400 | 佔座存活期：last_used 超齡且無活 pending 的綁定行會被回收 |
 | `ALERT_DISABLE_AUTOGEN` | 0 | 設為 1 時不會自動生成 001..100 |
 | `ALERT_NO_RENDERER` | 0 | 設為 1 時 alert.sh 只寫 pending，不啟動 renderer（測試用） |
 | `ALERT_FAKE_WINLINE` | — | 測試用：直接指定 `"<hwnd>\t<term_pid>"` 字串 |
@@ -291,4 +314,5 @@ PictureBox 的 Image 必須「先摘下（設 null）再 Dispose」。在還掛�
 | `test-image-dir-override.sh` | ALERT_IMAGE_DIR 設定 / 空 / 不存在 的優先序行為 |
 | `test-user-priority.sh` | user-images 專屬資料夾、使用者圖優先 / auto 只補溢位、誤放遷移、tsv 改寫 |
 | `test-session-binding.sh` | 端到端：同 session 跨 term_pid / 事件 / 順序永遠同一張圖 |
+| `test-assign-gc.sh` | 佔座回收：幽靈行釋出使用者圖、pending/TTL 內的行不誤刪、舊 2 欄行升級 |
 | `test-grid.ps1` / `.py` | 網格數學跨平台一致 |

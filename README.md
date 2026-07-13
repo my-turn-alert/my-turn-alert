@@ -105,7 +105,7 @@ These settings live in [`hooks/hooks.json`](./hooks/hooks.json); edit it to chan
 
 (Created automatically on first trigger; `~/.claude/alert-images/` also works — both folders are merged.)
 
-**Your images always come first** (v1.5.0): each Claude Code session claims one of your images in filename order (case-insensitive) and is **permanently bound** to it — the same session keeps the same image regardless of windows or completion order. Only after all your images are taken do **overflow sessions fall back to auto-generated numbered images**; the next cycle returns to your images first.
+**Your images always come first** (v1.5.0): each Claude Code session claims one of your images in filename order (case-insensitive) and is **bound** to it — the same session keeps the same image regardless of windows or completion order. Only after all your images are taken do **overflow sessions fall back to auto-generated numbered images**; the next cycle returns to your images first. Seats held by ended sessions are **reclaimed automatically** (v1.7.0): a binding expires once its popup is gone and it has been unused for `ALERT_ASSIGN_TTL_SECS` (default 24 h), so stale sessions never crowd new ones off your images.
 
 **Image source priority** (highest to lowest, each level a fallback):
 
@@ -158,6 +158,7 @@ Defaults live at the top of the popup scripts (`scripts/show-popup.ps1` and `sho
 | `ALERT_MAX_POPUPS` | `100` | Max popups visible at once (first come, first served; new CLIs wait once full) |
 | `ALERT_MONITOR` | auto | Pin popups to monitor N (1-based); unset or out-of-range uses the most recent alert's CLI screen |
 | `ALERT_CELL_MAX` | `320` | Max size (px) of a single popup image; raise it if you want bigger images |
+| `ALERT_ASSIGN_TTL_SECS` | `86400` | Seat-binding lifetime: rows with no live popup and no use within this window are reclaimed |
 | `ALERT_DISABLE_AUTOGEN` | `0` | Set `1` to disable auto-generating 001..100 when the image folder is empty |
 | `ALERT_DEFAULT_IMAGE` | plugin built-in | Final fallback image when every other source fails |
 | `ALERT_LOCK_STALE_SECS` | `30` | Lock directories older than this are treated as orphans (left by killed hooks) and broken automatically |
@@ -220,7 +221,7 @@ The popup starts in the background; `alert.sh` returns within a few hundred mill
 ├── pending/<key>.txt     ← one pending alert (keyed by terminal pid)
 ├── renderer.pid          ← PID of the long-lived renderer (single instance)
 ├── renderer.lock         ← startup mutex
-├── assignments.tsv       ← session_id → image-path seat assignments (permanent binding)
+├── assignments.tsv       ← session_id → image-path → last-used seat assignments (reclaimed after TTL)
 ├── user-images/          ← your images go here (always used first)
 ├── auto-images/          ← auto-generated numbered images (overflow only)
 └── seq                   ← global monotonic sequence (determines grid ordering)

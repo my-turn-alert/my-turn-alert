@@ -364,6 +364,14 @@ pc_read_field() {
   done < "$f"
 }
 
+_pc_epoch_v() {
+  # 現在 epoch 秒 → _PC_EPOCH。bash ≥4.2 用 printf '%(%s)T'（builtin、零 fork）；
+  # 舊 bash（macOS 內建 3.2）不支援該格式 → 退回 date（1 fork，僅冷平台付）。
+  _PC_EPOCH=""
+  printf -v _PC_EPOCH '%(%s)T' -1 2>/dev/null || :
+  case "$_PC_EPOCH" in (''|*[!0-9]*) _PC_EPOCH="$(date +%s)" ;; esac
+}
+
 pc_next_seq_v() {
   # 遞增 seq，結果放 _PC_SEQ（零 fork 版；read 是 builtin、不 fork cat）。
   _pc_bump_seq() {
@@ -630,12 +638,74 @@ _pc_least_used() {
   ' best=-1 pick="" "$src" - 2>/dev/null
 }
 
+_pc_touch_assign_row() {
+  # $1=af $2=key $3=path $4=現有時間戳（可空）。把該 key 的行改寫為
+  # 「key<TAB>path<TAB>now」——3 欄行續期、舊 2 欄行升級。呼叫端必須已持 assign 鎖。
+  # 節流：戳記齡 < 600 秒不重寫（省 1 個 mv fork；TTL 預設 86400，誤差可忽略）。
+  local af="$1" key="$2" path="$3" ts="$4"
+  _pc_epoch_v
+  if [ -n "$ts" ]; then
+    case "$ts" in
+      *[!0-9]*) : ;;   # 非數字戳記 → 視同無戳記，重寫升級
+      *) [ $(( _PC_EPOCH - ts )) -lt 600 ] && return 0 ;;
+    esac
+  fi
+  local out="" line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$key	"*) out="${out}${key}	${path}	${_PC_EPOCH}"$'\n' ;;
+      '') : ;;
+      *) out="${out}${line}"$'\n' ;;
+    esac
+  done < "$af"
+  printf '%s' "$out" > "$af.tmp.$$" 2>/dev/null && mv -f "$af.tmp.$$" "$af" 2>/dev/null
+}
+
+_pc_gc_assignments() {
+  # $1=assignments.tsv。回收死綁定（v1.7.0）。呼叫端必須已持 assign 鎖。
+  # 一行「活著」的條件（任一即可）：
+  #   a. key 出現在活的 pending（sanitized session_id 或檔名 base）——CLI 還掛著圖。
+  #   b. 第 3 欄 last_used 距今 ≤ ALERT_ASSIGN_TTL_SECS（預設 86400 = 24h）。
+  # 其餘（含無時間戳的舊 2 欄行）= 幽靈 → 整行回收，釋出使用者圖。
+  # 沒有這步，綁定只增不減：點掉彈窗後 pending 消失，該 session 的佔座永遠留在
+  # tsv，使用者圖全被幽靈佔滿 → 每個新 session 被推去 auto-images 拿新編號
+  # （實際故障：重裝後「image 從 004 開始算」）。
+  # 只在配新圖的 slow path 呼叫 —— 幽靈行只有在挑新圖時才會灌水佔用計數。
+  local af="$1"
+  [ -f "$af" ] || return 0
+  local d live="" f base
+  _pc_state_dir_v; d="$_PC_SD/pending"
+  for f in "$d"/*.txt; do
+    [ -f "$f" ] || continue
+    base="${f##*/}"; base="${base%.txt}"
+    live="${live}${base}"$'\n'
+    pc_read_field_v "$f" session_id
+    if [ -n "$_PC_FIELD" ]; then
+      pc_sanitize_key_v "$_PC_FIELD"
+      [ -n "$_PC_KEY" ] && live="${live}${_PC_KEY}"$'\n'
+    fi
+  done
+  local ttl="${ALERT_ASSIGN_TTL_SECS:-86400}"
+  case "$ttl" in (*[!0-9]*|'') ttl=86400 ;; esac
+  _pc_epoch_v
+  # 活鍵走 stdin（key 已 sanitize，無 TAB/換行）；字串相等比對，不經 regex。
+  printf '%s' "$live" | awk -F'\t' -v now="$_PC_EPOCH" -v ttl="$ttl" '
+    FILENAME == "-" { if ($0 != "") live[$0] = 1; next }
+    {
+      if ($1 in live) { print; next }
+      if (NF >= 3 && $3 ~ /^[0-9]+$/ && (now - $3) <= ttl) { print; next }
+    }
+  ' - "$af" > "$af.tmp" 2>/dev/null && mv -f "$af.tmp" "$af" 2>/dev/null
+}
+
 pc_assign_image() {
   # $1=assignment key（alert.sh 給的是 sanitize 後的 session_id；無 session 時退回
   # KEY。必唯一且跨事件穩定 —— 一個 session 永遠同一張圖）→ echo 圖片路徑。
-  # 優先序（v1.5.0）：
-  #   1. 既有 assignments.tsv 佔座（穩定綁定；圖檔消失才重配並清舊行）
+  # 優先序（v1.5.0；v1.7.0 加入佔座回收）：
+  #   1. 既有 assignments.tsv 佔座（穩定綁定，命中即續期 last_used；
+  #      圖檔消失才重配並清舊行）
   #   2. 使用者圖：ALERT_IMAGE_DIR（外部、唯讀）+ state_dir/user-images（合併按檔名序）
+  #      —— 配新圖前先 _pc_gc_assignments 回收死綁定，幽靈行不佔座
   #   3. 使用者圖全數被佔用（溢位）→ auto-images（ALERT_DISABLE_AUTOGEN!=1 才用）
   #   4. ALERT_LEGACY_IMAGE 舊單張
   #   5. ALERT_DEFAULT_IMAGE 內建預設
@@ -648,14 +718,20 @@ pc_assign_image() {
       # 既有佔座查找：純 bash 逐行比對（tsv 行數 = CLI 數，通常個位數）。
       # 舊版 grep|head|cut 管線 = 3 個 fork，這是每次 hook 必經的快路徑，
       # 高負載時省下的秒數就是 timeout 內外的差別（v1.5.1 效能修正）。
-      local existing="" line
+      # 行格式 key<TAB>path[<TAB>last_used]；第 3 欄可缺（舊版 2 欄行）。
+      local rest="" existing="" ets="" line
       while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in
-          "$pid	"*) existing="${line#*	}"; break ;;
+          "$pid	"*) rest="${line#*	}"; break ;;
         esac
       done < "$af"
-      if [ -n "$existing" ]; then
-        if [ -f "$existing" ]; then printf '%s' "$existing"; return 0; fi
+      if [ -n "$rest" ]; then
+        existing="${rest%%	*}"
+        ets="${rest#*	}"; [ "$ets" = "$rest" ] && ets=""
+        if [ -f "$existing" ]; then
+          _pc_touch_assign_row "$af" "$pid" "$existing" "$ets"
+          printf '%s' "$existing"; return 0
+        fi
         # 佔座的圖檔已消失 → 先清掉此 key 的舊行再重配（一 key 一行，不疊行）。
         # 不可呼叫 pc_release_assign：它會再搶同一把 assign 鎖（已被本函式持有）。
         # 罕見路徑，用單一 awk 重寫檔案（字串相等比對，不經 regex）。
@@ -663,6 +739,8 @@ pc_assign_image() {
         mv -f "$af.tmp" "$af" 2>/dev/null
       fi
     fi
+    # slow path（要挑新圖）→ 先回收死綁定，否則幽靈行灌水佔用計數。
+    _pc_gc_assignments "$af"
     local user_imgs sel best_count=""
     user_imgs="$(pc_list_images)"
     sel=""
@@ -689,7 +767,8 @@ EOF
     fi
     if [ -n "$sel" ]; then
       local pick="${sel#*	}"
-      printf '%s	%s\n' "$pid" "$pick" >> "$af"
+      _pc_epoch_v
+      printf '%s	%s	%s\n' "$pid" "$pick" "$_PC_EPOCH" >> "$af"
       printf '%s' "$pick"; return 0
     fi
     local legacy="${ALERT_LEGACY_IMAGE:-$HOME/.claude/alert-image.png}"

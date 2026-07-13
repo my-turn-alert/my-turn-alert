@@ -29,8 +29,10 @@ export CLAUDE_PLUGIN_ROOT="$(cd "$HERE/.." && pwd)"
 for i in 1 2 3 4; do : > "$ALERT_IMAGE_DIR/u$i.png"; done
 AUTO="$(pc_auto_image_dir)"; mkdir -p "$AUTO"
 i=1; while [ "$i" -le 100 ]; do : > "$AUTO/$(printf '%03d' "$i").png"; i=$((i+1)); done
+# 佔用行帶新鮮 last_used（v1.7.0）：無戳記的舊 2 欄行會被佔座回收清掉，溢位不成立。
 AF="$(pc_state_dir)/assignments.tsv"
-for i in 1 2 3 4; do printf 'old-sess-%s\t%s/u%s.png\n' "$i" "$ALERT_IMAGE_DIR" "$i"; done > "$AF"
+NOW="$(date +%s)"
+for i in 1 2 3 4; do printf 'old-sess-%s\t%s/u%s.png\t%s\n' "$i" "$ALERT_IMAGE_DIR" "$i" "$NOW"; done > "$AF"
 
 # --- spawn 計數 shim ---
 SHIM="$SBX/shim"; mkdir -p "$SHIM"

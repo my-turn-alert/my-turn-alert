@@ -37,12 +37,15 @@ done
 
 # 佔用情境：4 張使用者圖 + 前 50 張 auto 都已被別的 session 綁走 →
 # 新 session 必走溢位路徑，掃描 4+100 張候選。
+# 行帶新鮮 last_used 時間戳（v1.7.0 第 3 欄）：沒有戳記會被佔座回收當幽靈清掉，
+# 溢位路徑就不成立了。
 AF="$(pc_state_dir)/assignments.tsv"
+NOW="$(date +%s)"
 {
-  for i in 1 2 3 4; do printf 'sess-u%s\t%s/u%s.png\n' "$i" "$ALERT_IMAGE_DIR" "$i"; done
+  for i in 1 2 3 4; do printf 'sess-u%s\t%s/u%s.png\t%s\n' "$i" "$ALERT_IMAGE_DIR" "$i" "$NOW"; done
   i=1
   while [ "$i" -le 50 ]; do
-    printf 'sess-a%s\t%s/%s.png\n' "$i" "$AUTO" "$(printf '%03d' "$i")"
+    printf 'sess-a%s\t%s/%s.png\t%s\n' "$i" "$AUTO" "$(printf '%03d' "$i")" "$NOW"
     i=$((i+1))
   done
 } > "$AF"

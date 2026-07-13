@@ -105,7 +105,7 @@
 
 (首次觸發時自動建立;`~/.claude/alert-images/` 也同樣有效,兩處合併使用。)
 
-**你的圖永遠優先**(v1.5.0):每個 Claude Code session 按檔名順序(不分大小寫)佔一張你的圖並**永久綁定**——同一個 session 從頭到尾都是同一張圖,不隨視窗或完成順序改變。你的圖全部被佔用後,**多出來的 session 才會用自動生成的編號圖**補位;下一輪循環仍然先回到你的圖。
+**你的圖永遠優先**(v1.5.0):每個 Claude Code session 按檔名順序(不分大小寫)佔一張你的圖並**綁定**——同一個 session 從頭到尾都是同一張圖,不隨視窗或完成順序改變。你的圖全部被佔用後,**多出來的 session 才會用自動生成的編號圖**補位;下一輪循環仍然先回到你的圖。結束的 session 佔的座位會**自動回收**(v1.7.0):彈窗已關且超過 `ALERT_ASSIGN_TTL_SECS`(預設 24 小時)沒再使用的綁定即失效,舊 session 不會永遠霸佔你的圖、把新 session 擠去編號圖。
 
 **圖片來源優先順序**(由高到低,逐級退路):
 
@@ -158,6 +158,7 @@
 | `ALERT_MAX_POPUPS` | `100` | 同時可見上限(先到先服務;滿了之後的新 CLI 不彈圖) |
 | `ALERT_MONITOR` | 自動 | 指定顯示在第 N 個螢幕(1-based);未設或超界時用最新 alert 的 CLI 所在螢幕 |
 | `ALERT_CELL_MAX` | `320` | 單張彈圖的尺寸上限(px);想要大圖可調高 |
+| `ALERT_ASSIGN_TTL_SECS` | `86400` | 佔座存活期:沒有活彈窗且超齡未使用的綁定行會被回收 |
 | `ALERT_DISABLE_AUTOGEN` | `0` | 設 `1` 關閉空資料夾時自動生成 001..100 |
 | `ALERT_DEFAULT_IMAGE` | plugin 內建 | 全部退路都失敗時的最終預設圖 |
 | `ALERT_LOCK_STALE_SECS` | `30` | 鎖目錄超過此齡視為孤兒(被 kill 的 hook 留下的),自動破鎖 |
@@ -220,7 +221,7 @@
 ├── pending/<key>.txt     ← 一個待顯示 alert(以終端機 pid 為主鍵)
 ├── renderer.pid          ← 長駐 renderer 的 PID(單一實例)
 ├── renderer.lock         ← 啟動互斥鎖
-├── assignments.tsv       ← session_id → 圖片路徑 的佔座記錄(永久綁定)
+├── assignments.tsv       ← session_id → 圖片路徑 → 最後使用時間 的佔座記錄(超過 TTL 自動回收)
 ├── user-images/          ← 你的圖片放這裡(優先使用)
 ├── auto-images/          ← 自動生成的編號圖(只補溢位)
 └── seq                   ← 全域遞增序號(決定網格排列先後)
